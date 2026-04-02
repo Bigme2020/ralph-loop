@@ -1,0 +1,29 @@
+# 任务
+
+- [x] 1. 搭建基于 Bun 的 `ralph-loop-core` 包结构
+  - [x] 创建 `package.json`、构建脚本和 `bin/ralph-loop.ts` 入口
+  - [x] 初始化 `src/` 目录中的 `agents/`、`core/` 和 `ui/` 结构
+- [x] 2. 实现 prompt 和 completion 基础能力
+  - [x] 增加 success 和 abort 信号的终端 promise 检测
+  - [x] 支持 inline 文本、prompt 文件和运行时追加 prompt 文本
+- [x] 3. 实现最小持久化和 loop 类型定义
+  - [x] 增加 active-run 状态存储和清理逻辑
+  - [x] 定义共享的 loop、reporter 和 agent 接口
+- [x] 4. 实现多 agent adapter
+  - [x] 增加 `opencode`、`claude-code`、`codex` 和 `copilot` 的 adapter
+  - [x] 保留环境变量覆盖和 Windows `.cmd` fallback
+- [x] 5. 实现 Bun process runner
+  - [x] 通过 runtime reporter 流式输出 stdout 和 stderr
+  - [x] 增加 compact tool summary、heartbeat 和无活动超时处理
+- [x] 6. 实现 loop runner 和交互边界
+  - [x] 处理 success、abort、retry、timeout 和 cancellation 结果
+  - [x] 增加可选的 question 处理，并把答案注入下一轮迭代
+- [x] 7. 在薄 CLI 中保留运行时 CLI UX
+  - [x] 增加启动、迭代和完成阶段的 reporter 输出
+  - [x] 保持运行时 UI 与工作流逻辑分离
+- [x] 8. 迁移 OpenSpec wrapper
+  - [x] 更新 `bin/ralph-run-openspec.ts`，让它只负责校验 change 目录并调用 `ralph-loop`
+  - [x] 保持 OpenSpec 专属规则留在 core 之外
+- [x] 9. 验证新的 loop 运行时
+  - [x] 增加 Bun 单测和 fake-agent 集成测试覆盖
+  - [x] 完成 OpenSpec wrapper 路径的手动验证

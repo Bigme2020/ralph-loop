@@ -1,0 +1,42 @@
+schema: spec-driven
+
+context: |
+  语言：中文（简体）
+  所有 OpenSpec 产出物必须使用简体中文撰写。
+
+  项目背景：
+  之前工作流通过 `ralph-run-openspec` 和 `openspec-wrapper/openspec-prompt-file.md`
+  依赖 `open-ralph-wiggum` 提供面向 OpenSpec 的循环执行入口，但仓库实际只使用
+  了 `open-ralph-wiggum` 中一小部分运行时能力。
+
+  当前规划是在仓库内引入一个基于 Bun 的 `ralph-loop-core` 库，逐步替代这部分
+  上游依赖。新的 core 只保留通用的 loop 运行时能力，而工作流专属的校验和
+  prompt 组装继续留在 `openspec-wrapper` 这样的薄包装层中。
+
+  项目约束：
+  - 保留运行中 loop 的 CLI UX
+  - 保留 `opencode`、`claude-code`、`codex` 和 `copilot` 的兼容性
+  - 将 OpenSpec 专属规则放在 loop core 之外
+  - 优先选择小而可复用的运行时，而不是框架化的编排层
+
+  为保持 OpenSpec CLI 的解析与校验兼容性，以下结构关键字必须保留官方格式，不要翻译：
+  - proposal.md 中的章节标题：Why、What Changes
+  - delta spec 中的章节标题：ADDED Requirements、MODIFIED Requirements、REMOVED Requirements、RENAMED Requirements
+  - delta spec 中的标题前缀：Requirement:、Scenario:
+  - 规范性关键词：MUST、SHALL
+
+  除上述结构关键字、代码、命令、文件路径和专有名词外，其余内容全部使用简体中文。
+
+rules:
+  proposal:
+    - 除 OpenSpec 必需结构标题和技术名词外，全部使用简体中文。
+    - 优先说明变更动机、范围和影响，避免展开实现细节。
+  specs:
+    - 除 OpenSpec 必需结构关键字以及 MUST、SHALL 外，正文全部使用简体中文。
+    - 场景描述必须可验证，避免模糊表述。
+  design:
+    - 全文使用简体中文，代码、路径、命令和专有名词可保留英文。
+    - 重点说明为什么这样设计，而不是堆砌实现细节。
+  tasks:
+    - 全文使用简体中文。
+    - 任务描述要小而可验证，并按依赖顺序排列。

@@ -1,0 +1,19 @@
+{
+  "name": "ralph-loop-dev",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "ralph-loop": "./bin/ralph-loop.ts",
+    "ralph-run-openspec": "./bin/ralph-run-openspec.ts",
+    "ralph-install": "./bin/install.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "test:unit": "bun test src/**/__tests__ openspec-wrapper/__tests__",
+    "build": "bun build ./bin/ralph-loop.ts ./bin/ralph-run-openspec.ts ./bin/install.ts --outdir ./dist --target bun"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.11"
+  }
+}
