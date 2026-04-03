@@ -116,7 +116,8 @@ loop 结果。
 
 ### Requirement: 最小运行状态持久化
 
-仓库 MUST 只持久化 resume 和 cleanup 所需的最小 active-run 状态。
+仓库 MUST 持久化 resume、cleanup 和 QA 回溯所需的最小运行状态，其中 `active-run`
+只用于恢复执行，QA 审计记录使用独立文件保存。
 
 #### Scenario: 恢复未完成运行
 
@@ -125,12 +126,52 @@ loop 结果。
 - 那么运行时会恢复已保存的迭代序号和运行设置
 - 并且会基于已保存状态继续执行
 
-#### Scenario: 终态退出后清理状态
+#### Scenario: 终态退出后清理 active state
 
-- 假定某次运行已经完成、abort 或被取消
+- 假定某次运行已经完成、abort 或被取消并退出
 - 当 loop 退出时
-- 那么 active state 文件会被删除
+- 那么 `active-run.json` 会被删除
 - 并且不会留下陈旧的 active-run 元数据
+
+#### Scenario: 终态退出后保留 QA 审计记录
+
+- 假定某次 loop 运行进入终态
+- 当 loop 退出时
+- 那么 `.ralph-loop/history.jsonl` 会追加一条该次运行的摘要记录
+- 并且 `.ralph-loop/runs/<run-id>.json` 会保留该次运行的详情记录
+
+### Requirement: QA 审计日志
+
+仓库 MUST 在 `.ralph-loop/` 下为每次执行保留最小但可回溯的 QA 审计记录，且不得
+默认落盘 prompt、agent 输出或用户回答正文。
+
+#### Scenario: 运行启动时初始化 detail 记录
+
+- 假定某次新的 loop 运行开始执行
+- 当运行初始化 QA 审计记录时
+- 那么 `.ralph-loop/runs/<run-id>.json` 会被创建为 `running` 状态
+- 并且记录 `runId`、时间、cwd、agent、model、promptSource 和 `promptLength`
+
+#### Scenario: iteration 只记录极简摘要
+
+- 假定某轮迭代已经结束并写入 QA 审计记录
+- 当运行持久化该轮摘要时
+- 那么该轮只会记录 `iteration`、`exitCode`、`completed`、`tools`、`askedQuestion` 和 `answerProvided`
+- 并且仅在存在回答时附带 `answerLength`
+
+#### Scenario: 提问交互不落盘正文
+
+- 假定 agent 在某轮迭代中向用户提问且用户提供了回答
+- 当运行写入 QA 审计日志时
+- 那么日志只记录是否提问、是否回答和回答长度等元信息
+- 并且不会把回答正文写入 `.ralph-loop`
+
+#### Scenario: 异常运行保留 crashed 记录
+
+- 假定 loop 主流程在某轮执行期间抛出未处理异常
+- 当运行写入终态 QA 审计记录时
+- 那么该次 run 的 detail 会被标记为 `crashed`
+- 并且 `history.jsonl` 仍会保留对应的终态摘要
 
 ### Requirement: 可选的 Question 处理
 
