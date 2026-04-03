@@ -21,6 +21,7 @@
   "include": [
     "src/**/*.ts",
     "bin/**/*.ts",
+    "openspec-wrapper/**/*.ts",
     "test/**/*.ts"
   ]
 }

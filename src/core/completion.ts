@@ -13,9 +13,14 @@ export function getLastNonEmptyLine(output: string): string | null {
 }
 
 export function checkTerminalPromise(output: string, promise: string): boolean {
-  const lastLine = getLastNonEmptyLine(output);
-  if (!lastLine) return false;
-
   const escaped = promise.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`^<promise>\\s*${escaped}\\s*</promise>$`, "i").test(lastLine);
+  const terminalPromisePattern = new RegExp(`^<promise>\\s*${escaped}\\s*</promise>$`, "i");
+  const normalized = stripAnsi(output).replace(/\r\n/g, "\n").trim();
+
+  const lastLine = getLastNonEmptyLine(normalized);
+  if (lastLine && terminalPromisePattern.test(lastLine)) {
+    return true;
+  }
+
+  return new RegExp("```(?:\\w+)?\\n\\s*<promise>\\s*" + escaped + "\\s*</promise>\\s*\\n```$", "i").test(normalized);
 }

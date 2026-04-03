@@ -22,4 +22,16 @@ describe("completion 模块", () => {
   it("以大小写不敏感方式匹配 promise 内容", () => {
     expect(checkTerminalPromise("<promise>complete</promise>", "COMPLETE")).toBeTrue();
   });
+
+  it("接受被包在最后一个代码块中的终止 promise", () => {
+    expect(
+      checkTerminalPromise("简短总结：\n\n```text\n<promise>COMPLETE</promise>\n```", "COMPLETE"),
+    ).toBeTrue();
+  });
+
+  it("拒绝代码块结束后仍有额外非空内容的 promise", () => {
+    expect(
+      checkTerminalPromise("```text\n<promise>COMPLETE</promise>\n```\nextra", "COMPLETE"),
+    ).toBeFalse();
+  });
 });

@@ -1,7 +1,5 @@
 #!/usr/bin/env bun
 
-import { join } from "node:path";
-
 import { runOpenSpecWrapper } from "../openspec-wrapper";
 import type { AgentType } from "../src/agents/types";
 
@@ -77,7 +75,6 @@ if (maxIterations !== undefined && (!Number.isInteger(maxIterations) || maxItera
 await runOpenSpecWrapper({
   repoRoot: process.cwd(),
   changeId,
-  promptFile: join(process.cwd(), "openspec-wrapper", "openspec-prompt-file.md"),
   agent,
   model,
   maxIterations,

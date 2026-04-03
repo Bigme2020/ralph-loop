@@ -1,7 +1,7 @@
 # Ralph Loop Dev
 
 `ralph-loop-dev` 是一个基于 Bun 的最小 loop runtime 仓库，用来驱动文档型工作流。
-当前重点场景是 OpenSpec：通过外部 prompt 文件和 runtime prompt 追加，把
+当前重点场景是 OpenSpec：通过内置 wrapper prompt 模板和 runtime prompt 追加，把
 `opencode`、`claude-code`、`codex`、`copilot` 这类 agent 放进统一的循环执行框架里。
 
 它的设计目标不是复刻完整的 `open-ralph-wiggum`，而是保留真正需要的公共能力：
@@ -90,8 +90,7 @@ bun run bin/ralph-run-openspec.ts ...
 │   ├── install/
 │   └── ui/
 ├── openspec-wrapper/
-│   ├── index.ts
-│   └── openspec-prompt-file.md
+│   └── index.ts
 ├── openspec/
 ├── test/
 ├── install.sh
@@ -115,7 +114,7 @@ bun run bin/ralph-run-openspec.ts ...
   - 运行时 CLI 输出
   - 当前主要是 console reporter
 - `openspec-wrapper/`
-  - OpenSpec 的用户侧 wrapper 代码和 prompt 文件
+  - OpenSpec 的用户侧 wrapper 代码和内置 prompt 模板
   - 不放进 `src/core/`，避免工作流逻辑污染通用 runtime
 - `src/install/`
   - 安装逻辑和全局命令路径处理

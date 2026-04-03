@@ -1,4 +1,6 @@
 import { describe, expect, it } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 describe("typescript 配置检查", () => {
   it("在没有缺失类型定义时通过 Bun 和 process 全局变量的类型检查", async () => {
@@ -16,4 +18,12 @@ describe("typescript 配置检查", () => {
     expect(stderr).not.toContain("Cannot find name 'Bun'");
     expect(stderr).not.toContain("Cannot find name 'process'");
   }, { timeout: 30_000 });
+
+  it("tsconfig 包含 openspec-wrapper 下的 TypeScript 文件", () => {
+    const tsconfig = JSON.parse(readFileSync(join(process.cwd(), "tsconfig.json"), "utf8")) as {
+      include?: string[];
+    };
+
+    expect(tsconfig.include).toContain("openspec-wrapper/**/*.ts");
+  });
 });

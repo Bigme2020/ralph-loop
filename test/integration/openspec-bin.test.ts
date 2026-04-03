@@ -3,15 +3,25 @@ import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { OPENSPEC_PROMPT_TEMPLATE } from "../../openspec-wrapper";
+
 describe("openspec bin 集成行为", () => {
   it("运行 TypeScript 版本的 OpenSpec bin 入口", async () => {
+    const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), "ralph-openspec-direct-")));
+    const changeDir = join(repoRoot, "openspec", "changes", "demo-change");
+    mkdirSync(join(changeDir, "specs", "demo"), { recursive: true });
+    writeFileSync(join(changeDir, "proposal.md"), "# proposal\n", "utf8");
+    writeFileSync(join(changeDir, "design.md"), "# design\n", "utf8");
+    writeFileSync(join(changeDir, "tasks.md"), "- [x] done\n", "utf8");
+    writeFileSync(join(changeDir, "specs", "demo", "spec.md"), "# spec\n", "utf8");
+
     const proc = Bun.spawn(
       [
         Bun.which("bun")!,
         "run",
         join(process.cwd(), "bin", "ralph-run-openspec.ts"),
         "--change-id",
-        "add-ralph-loop-core",
+        "demo-change",
         "--max-iterations",
         "1",
         "--agent",
@@ -20,7 +30,7 @@ describe("openspec bin 集成行为", () => {
         join(process.cwd(), "test", "fixtures", "fake-agents", "fake-agent-success.ts"),
       ],
       {
-        cwd: process.cwd(),
+        cwd: repoRoot,
         stdout: "pipe",
         stderr: "pipe",
         env: {
@@ -32,31 +42,35 @@ describe("openspec bin 集成行为", () => {
     );
 
     const stdout = await new Response(proc.stdout).text();
+    const stderr = await new Response(proc.stderr).text();
     const exitCode = await proc.exited;
 
-    expect(exitCode).toBe(0);
-    expect(stdout).toContain("== OpenSpec Ralph Run ==");
-    expect(stdout).toContain("complete after iteration 1/1");
+    try {
+      expect(exitCode).toBe(0);
+      expect(stderr).toBe("");
+      expect(stdout).toContain("== OpenSpec Ralph Run ==");
+      expect(stdout).toContain("complete after iteration 1/1");
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
   });
 
   it("通过 ralph-loop CLI 而不是直接调用 core 运行", async () => {
     const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), "ralph-openspec-wrapper-")));
-    const binDir = join(repoRoot, "bin");
-    const wrapperDir = join(repoRoot, "openspec-wrapper");
+    const globalBinDir = join(repoRoot, "global-bin");
     const changeDir = join(repoRoot, "openspec", "changes", "demo-change");
-    mkdirSync(binDir, { recursive: true });
+    mkdirSync(globalBinDir, { recursive: true });
     mkdirSync(join(changeDir, "specs", "demo"), { recursive: true });
-    mkdirSync(wrapperDir, { recursive: true });
     writeFileSync(join(changeDir, "proposal.md"), "# proposal\n", "utf8");
     writeFileSync(join(changeDir, "design.md"), "# design\n", "utf8");
     writeFileSync(join(changeDir, "tasks.md"), "- [x] done\n", "utf8");
     writeFileSync(join(changeDir, "specs", "demo", "spec.md"), "# spec\n", "utf8");
-    writeFileSync(join(wrapperDir, "openspec-prompt-file.md"), "wrapper prompt\n", "utf8");
     writeFileSync(
-      join(binDir, "ralph-loop.ts"),
-      `#!/usr/bin/env bun\nimport { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(join(repoRoot, "ralph-loop-args.json"))}, JSON.stringify(process.argv.slice(2), null, 2));\nconsole.log("delegated via cli");\n`,
+      join(globalBinDir, "ralph-loop"),
+      `#!/usr/bin/env bun\nimport { writeFileSync } from "node:fs";\nconst args = process.argv.slice(2);\nwriteFileSync(${JSON.stringify(join(repoRoot, "ralph-loop-call.json"))}, JSON.stringify({ args }, null, 2));\nconsole.log("delegated via global cli");\n`,
       "utf8",
     );
+    Bun.spawnSync(["chmod", "+x", join(globalBinDir, "ralph-loop")]);
 
     const proc = Bun.spawn(
       [
@@ -81,6 +95,7 @@ describe("openspec bin 集成行为", () => {
         stderr: "pipe",
         env: {
           ...process.env,
+          PATH: `${globalBinDir}:${process.env.PATH ?? ""}`,
           RALPH_SKIP_GIT_CLEAN_CHECK: "1",
         },
       },
@@ -92,14 +107,15 @@ describe("openspec bin 集成行为", () => {
 
     expect(exitCode).toBe(0);
     expect(stderr).toBe("");
-    expect(stdout).toContain("delegated via cli");
+    expect(stdout).toContain("delegated via global cli");
 
-    const delegatedArgs = JSON.parse(readFileSync(join(repoRoot, "ralph-loop-args.json"), "utf8")) as string[];
-    expect(delegatedArgs).toEqual([
+    const delegatedCall = JSON.parse(readFileSync(join(repoRoot, "ralph-loop-call.json"), "utf8")) as {
+      args: string[];
+    };
+    expect(delegatedCall.args).toEqual([
       "--agent",
       "opencode",
-      "--prompt-file",
-      join(repoRoot, "openspec-wrapper", "openspec-prompt-file.md"),
+      OPENSPEC_PROMPT_TEMPLATE,
       "--append-prompt",
       `执行 OpenSpec change：${join(repoRoot, "openspec", "changes", "demo-change")}`,
       "--max-iterations",
