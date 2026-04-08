@@ -318,6 +318,61 @@ ralph-loop --agent codex --model gpt-5 --prompt-file ./prompts/loop-task.md -- -
 RALPH_OPENCODE_BINARY="$(which opencode)" ralph-loop --prompt-file ./prompts/loop-task.md
 ```
 
+### Core：自定义 CLI 输出颜色
+
+`ralph-loop` 会把 CLI 输出分成 3 类：
+
+- `core`
+  - banner
+  - iteration 标题
+  - heartbeat
+  - 完成、取消、超时等摘要
+- `agentStdout`
+  - agent 标准输出
+- `agentStderr`
+  - agent 错误输出
+
+默认配色是低干扰风格：
+
+- `core = cyan`
+- `agentStdout = default`
+- `agentStderr = yellow`
+
+你可以通过 `config.jsonc` 自定义颜色，读取优先级为：
+
+- 内置默认值
+- 全局配置：`~/.ralph-loop/config.jsonc`
+- 项目配置：`<repo>/.ralph-loop/config.jsonc`
+
+项目配置会覆盖全局配置中的同名字段。配置文件结构如下：
+
+```jsonc
+{
+  "colors": {
+    "core": "cyan",
+    "agentStdout": "default",
+    "agentStderr": "yellow"
+  }
+}
+```
+
+当前支持的颜色值只有以下命名颜色：
+
+- `default`
+- `gray`
+- `blue`
+- `cyan`
+- `green`
+- `yellow`
+- `red`
+- `magenta`
+
+非法颜色值会自动回退到上一级配置或内置默认值。颜色默认只会在 TTY 环境下输出；如果你想在测试或管道里强制开启 ANSI 颜色，可以设置：
+
+```bash
+FORCE_COLOR=1 ralph-loop --prompt-file ./prompts/loop-task.md
+```
+
 ### Wrapper：运行 OpenSpec 工作流
 
 如果你的任务本身就是 OpenSpec change，可以直接使用现成 wrapper。它会做 OpenSpec 目录校验、查找 spec，并补充对应的 runtime prompt。

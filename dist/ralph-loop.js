@@ -2,56 +2,215 @@
 // @bun
 
 // src/ui/console-reporter.ts
+var ANSI_COLOR_CODES = {
+  default: "39",
+  gray: "90",
+  blue: "34",
+  cyan: "36",
+  green: "32",
+  yellow: "33",
+  red: "31",
+  magenta: "35"
+};
 function formatIterationLabel(context) {
   if (context.maxIterations && context.maxIterations > 0) {
     return `${context.iteration}/${context.maxIterations}`;
   }
   return `${context.iteration}`;
 }
-function createConsoleReporter() {
+function supportsColor(forceColor) {
+  if (typeof forceColor === "boolean") {
+    return forceColor;
+  }
+  return Boolean(process.stdout.isTTY && process.stderr.isTTY);
+}
+function colorize(text, color, enabled) {
+  if (!enabled || color === "default") {
+    return text;
+  }
+  return `\x1B[${ANSI_COLOR_CODES[color]}m${text}\x1B[0m`;
+}
+function createConsoleReporter(options = {}) {
+  const colorEnabled = supportsColor(options.forceColor);
+  const stdout = options.stdout ?? process.stdout;
+  const stderr = options.stderr ?? process.stderr;
+  const colors = options.colors;
+  const writeCoreLine = (line) => {
+    stdout.write(`${colorize(line, colors?.core ?? "default", colorEnabled)}
+`);
+  };
   return {
     onRunStart(summary) {
-      console.log("== Ralph Loop ==");
-      console.log(`Agent: ${summary.agent}`);
+      writeCoreLine("== Ralph Loop ==");
+      writeCoreLine(`Agent: ${summary.agent}`);
       if (summary.model) {
-        console.log(`Model: ${summary.model}`);
+        writeCoreLine(`Model: ${summary.model}`);
       }
-      console.log(`Prompt source: ${summary.promptSource}`);
-      console.log("");
+      writeCoreLine(`Prompt source: ${summary.promptSource}`);
+      stdout.write(`
+`);
     },
     onIterationStart(context) {
-      console.log(`-- Iteration ${formatIterationLabel(context)} --`);
+      writeCoreLine(`-- Iteration ${formatIterationLabel(context)} --`);
+    },
+    onStdoutChunk(chunk) {
+      stdout.write(colorize(chunk, colors?.agentStdout ?? "default", colorEnabled));
+    },
+    onStderrChunk(chunk) {
+      stderr.write(colorize(chunk, colors?.agentStderr ?? "default", colorEnabled));
     },
     onHeartbeat(context) {
-      console.log(`heartbeat: elapsed ${context.elapsedMs}ms, idle ${context.idleMs}ms`);
+      writeCoreLine(`heartbeat: elapsed ${context.elapsedMs}ms, idle ${context.idleMs}ms`);
     },
     onIterationEnd(context) {
-      console.log(`iteration ${formatIterationLabel(context)} exit=${context.exitCode} completed=${context.completed}`);
+      writeCoreLine(`iteration ${formatIterationLabel(context)} exit=${context.exitCode} completed=${context.completed}`);
+      const tools = Object.entries(context.toolCounts);
+      if (tools.length > 0) {
+        writeCoreLine(`tools: ${tools.map(([name, count]) => `${name}=${count}`).join(", ")}`);
+      }
     },
     onComplete(context) {
-      console.log(`complete after iteration ${formatIterationLabel(context)}`);
+      writeCoreLine(`complete after iteration ${formatIterationLabel(context)}`);
     },
     onAbort(context) {
-      console.log(`abort after iteration ${formatIterationLabel(context)} via ${context.promise}`);
+      writeCoreLine(`abort after iteration ${formatIterationLabel(context)} via ${context.promise}`);
     },
     onTimeout(context) {
-      console.log(`timeout after iteration ${formatIterationLabel(context)} idle=${context.idleMs}ms limit=${context.timeoutMs}ms`);
+      writeCoreLine(`timeout after iteration ${formatIterationLabel(context)} idle=${context.idleMs}ms limit=${context.timeoutMs}ms`);
+      if (context.resumeHint) {
+        writeCoreLine(`resume: ${context.resumeHint}`);
+      }
+    },
+    onCancelled(context) {
+      writeCoreLine(`cancelled after iteration ${formatIterationLabel(context)}`);
     }
   };
 }
 
+// src/core/state-store.ts
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { join } from "path";
+function createStateStore(cwd, stateDirName = ".ralph-loop") {
+  const stateDir = join(cwd, stateDirName);
+  const statePath = join(stateDir, "active-run.json");
+  return {
+    stateDir,
+    statePath,
+    load() {
+      if (!existsSync(statePath)) {
+        return null;
+      }
+      try {
+        return JSON.parse(readFileSync(statePath, "utf8"));
+      } catch {
+        return null;
+      }
+    },
+    save(state) {
+      mkdirSync(stateDir, { recursive: true });
+      writeFileSync(statePath, `${JSON.stringify(state, null, 2)}
+`, "utf8");
+    },
+    clear() {
+      if (existsSync(statePath)) {
+        rmSync(statePath, { force: true });
+      }
+    }
+  };
+}
+
+// src/core/audit-store.ts
+import { existsSync as existsSync2, mkdirSync as mkdirSync2, readFileSync as readFileSync2, writeFileSync as writeFileSync2 } from "fs";
+import { randomBytes } from "crypto";
+import { join as join2 } from "path";
+function formatRunIdTimestamp(date) {
+  const iso = date.toISOString();
+  return iso.replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+}
+function buildSummary(status, context) {
+  switch (status) {
+    case "completed":
+      return `completed after ${context.iteration} iterations`;
+    case "aborted":
+      return `aborted after ${context.iteration} iterations via ${context.promise ?? "ABORT"}`;
+    case "timed-out":
+      return `timed out at iteration ${context.iteration}`;
+    case "cancelled":
+      return `cancelled at iteration ${context.iteration}`;
+    case "max-iterations":
+      return `stopped at max iterations ${context.maxIterations ?? context.iteration}`;
+    case "crashed":
+      return `crashed during iteration ${context.iteration}`;
+  }
+}
+function writeJsonFile(filePath, value) {
+  writeFileSync2(filePath, `${JSON.stringify(value, null, 2)}
+`, "utf8");
+}
+function createAuditStore(cwd, stateDirName = ".ralph-loop") {
+  const stateDir = join2(cwd, stateDirName);
+  const runsDir = join2(stateDir, "runs");
+  const historyPath = join2(stateDir, "history.jsonl");
+  const getRunPath = (runId) => join2(runsDir, `${runId}.json`);
+  const readRun = (runId) => {
+    return JSON.parse(readFileSync2(getRunPath(runId), "utf8"));
+  };
+  const ensureDirs = () => {
+    mkdirSync2(runsDir, { recursive: true });
+  };
+  return {
+    createRunId() {
+      return `${formatRunIdTimestamp(new Date)}-${randomBytes(3).toString("hex")}`;
+    },
+    initialize(record) {
+      ensureDirs();
+      writeJsonFile(getRunPath(record.runId), record);
+    },
+    appendIteration(runId, iteration) {
+      const record = readRun(runId);
+      record.iterations.push(iteration);
+      writeJsonFile(getRunPath(runId), record);
+    },
+    finalize(runId, terminal) {
+      const record = readRun(runId);
+      record.endedAt = terminal.endedAt;
+      record.status = terminal.status;
+      record.completedIterations = terminal.completedIterations;
+      record.summary = terminal.summary;
+      writeJsonFile(getRunPath(runId), record);
+      const historyEntry = {
+        runId: record.runId,
+        startedAt: record.startedAt,
+        endedAt: terminal.endedAt,
+        cwd: record.cwd,
+        agent: record.agent,
+        model: record.model,
+        status: terminal.status,
+        completedIterations: terminal.completedIterations,
+        summary: terminal.summary
+      };
+      const previous = existsSync2(historyPath) ? readFileSync2(historyPath, "utf8") : "";
+      writeFileSync2(historyPath, `${previous}${JSON.stringify(historyEntry)}
+`, "utf8");
+    }
+  };
+}
+function createRunSummary(status, context) {
+  return buildSummary(status, context);
+}
+
 // src/core/prompt-source.ts
-import { existsSync, readFileSync, statSync } from "fs";
+import { existsSync as existsSync3, readFileSync as readFileSync3, statSync } from "fs";
 function resolvePromptText(input) {
   const parts = [];
   if (input.filePath) {
-    if (!existsSync(input.filePath)) {
+    if (!existsSync3(input.filePath)) {
       throw new Error(`prompt \u6587\u4EF6\u4E0D\u5B58\u5728: ${input.filePath}`);
     }
     if (!statSync(input.filePath).isFile()) {
       throw new Error(`prompt \u8DEF\u5F84\u4E0D\u662F\u6587\u4EF6: ${input.filePath}`);
     }
-    const content = readFileSync(input.filePath, "utf8").trim();
+    const content = readFileSync3(input.filePath, "utf8").trim();
     if (!content) {
       throw new Error(`prompt \u6587\u4EF6\u4E3A\u7A7A: ${input.filePath}`);
     }
@@ -71,38 +230,6 @@ function resolvePromptText(input) {
 `);
 }
 
-// src/core/state-store.ts
-import { existsSync as existsSync2, mkdirSync, readFileSync as readFileSync2, rmSync, writeFileSync } from "fs";
-import { join } from "path";
-function createStateStore(cwd, stateDirName = ".ralph-loop") {
-  const stateDir = join(cwd, stateDirName);
-  const statePath = join(stateDir, "active-run.json");
-  return {
-    stateDir,
-    statePath,
-    load() {
-      if (!existsSync2(statePath)) {
-        return null;
-      }
-      try {
-        return JSON.parse(readFileSync2(statePath, "utf8"));
-      } catch {
-        return null;
-      }
-    },
-    save(state) {
-      mkdirSync(stateDir, { recursive: true });
-      writeFileSync(statePath, `${JSON.stringify(state, null, 2)}
-`, "utf8");
-    },
-    clear() {
-      if (existsSync2(statePath)) {
-        rmSync(statePath, { force: true });
-      }
-    }
-  };
-}
-
 // src/core/completion.ts
 function stripAnsi(input) {
   return input.replace(/\u001b\[[0-9;]*m/g, "");
@@ -114,11 +241,15 @@ function getLastNonEmptyLine(output) {
   return lines.length > 0 ? lines[lines.length - 1] : null;
 }
 function checkTerminalPromise(output, promise) {
-  const lastLine = getLastNonEmptyLine(output);
-  if (!lastLine)
-    return false;
   const escaped = promise.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`^<promise>\\s*${escaped}\\s*</promise>$`, "i").test(lastLine);
+  const terminalPromisePattern = new RegExp(`^<promise>\\s*${escaped}\\s*</promise>$`, "i");
+  const normalized = stripAnsi(output).replace(/\r\n/g, `
+`).trim();
+  const lastLine = getLastNonEmptyLine(normalized);
+  if (lastLine && terminalPromisePattern.test(lastLine)) {
+    return true;
+  }
+  return new RegExp("```(?:\\w+)?\\n\\s*<promise>\\s*" + escaped + "\\s*</promise>\\s*\\n```$", "i").test(normalized);
 }
 
 // src/agents/shared.ts
@@ -293,6 +424,7 @@ async function runAgentProcess(command, adapter, prompt, options, runtime = {}) 
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
+    detached: process.platform !== "win32",
     env: {
       ...process.env,
       ...adapter.buildEnv?.(options) ?? {}
@@ -301,8 +433,18 @@ async function runAgentProcess(command, adapter, prompt, options, runtime = {}) 
   let stdout = "";
   let stderr = "";
   let timedOut = false;
+  let cancelled = false;
   const startedAt = Date.now();
   let lastActivityAt = Date.now();
+  const toolCounts = {};
+  const trackTools = (text) => {
+    for (const line of text.split(/\r?\n/)) {
+      const toolName = adapter.parseToolName(line);
+      if (toolName) {
+        toolCounts[toolName] = (toolCounts[toolName] ?? 0) + 1;
+      }
+    }
+  };
   const readStream = async (stream, onChunk) => {
     if (!stream)
       return;
@@ -316,9 +458,30 @@ async function runAgentProcess(command, adapter, prompt, options, runtime = {}) 
       if (!text)
         continue;
       lastActivityAt = Date.now();
+      trackTools(text);
       onChunk(text);
     }
   };
+  const killProcess = () => {
+    try {
+      if (process.platform !== "win32" && proc.pid) {
+        process.kill(-proc.pid, "SIGKILL");
+      } else {
+        proc.kill("SIGKILL");
+      }
+    } catch {}
+  };
+  const abortHandler = () => {
+    cancelled = true;
+    killProcess();
+  };
+  if (runtime.cancelSignal) {
+    if (runtime.cancelSignal.aborted) {
+      abortHandler();
+    } else {
+      runtime.cancelSignal.addEventListener("abort", abortHandler, { once: true });
+    }
+  }
   const heartbeatIntervalMs = runtime.heartbeatIntervalMs ?? 1e4;
   const timer = setInterval(() => {
     const now = Date.now();
@@ -328,26 +491,29 @@ async function runAgentProcess(command, adapter, prompt, options, runtime = {}) 
     });
     if (runtime.inactivityTimeoutMs && now - lastActivityAt >= runtime.inactivityTimeoutMs) {
       timedOut = true;
-      try {
-        proc.kill();
-      } catch {}
+      killProcess();
     }
   }, heartbeatIntervalMs);
   await Promise.all([
     readStream(proc.stdout, (chunk) => {
       stdout += chunk;
+      runtime.onStdoutChunk?.(chunk);
     }),
     readStream(proc.stderr, (chunk) => {
       stderr += chunk;
+      runtime.onStderrChunk?.(chunk);
     }),
     proc.exited
   ]);
   clearInterval(timer);
+  runtime.cancelSignal?.removeEventListener("abort", abortHandler);
   return {
     stdout,
     stderr,
-    exitCode: proc.exitCode ?? (timedOut ? 124 : 1),
-    timedOut
+    exitCode: proc.exitCode ?? (timedOut ? 124 : cancelled ? 130 : 1),
+    timedOut,
+    cancelled,
+    toolCounts
   };
 }
 
@@ -379,95 +545,232 @@ function createInitialState(options) {
 function resolvePromptForIteration(state) {
   return resolvePromptText(state.prompt);
 }
+function buildResumeHint(cwd) {
+  return `cd ${cwd} && bun run bin/ralph-loop.ts --resume`;
+}
 async function runLoop(options) {
   const stateStore = createStateStore(options.cwd);
+  const auditStore = createAuditStore(options.cwd);
   const state = createInitialState(options);
   const maxIterations = options.completion.maxIterations ?? 0;
   const minIterations = options.completion.minIterations ?? 1;
   const promptSource = options.prompt.filePath ?? "inline";
+  const initialPrompt = resolvePromptForIteration(state);
+  const runId = auditStore.createRunId();
   options.reporter?.onRunStart?.({
     agent: options.agent.type,
     model: options.agent.model,
     promptSource
   });
+  auditStore.initialize({
+    runId,
+    startedAt: state.startedAt,
+    cwd: options.cwd,
+    agent: options.agent.type,
+    model: options.agent.model,
+    promptSource,
+    promptLength: initialPrompt.length,
+    status: "running",
+    iterations: []
+  });
   stateStore.save(state);
-  while (maxIterations === 0 || state.iteration <= maxIterations) {
-    const prompt = resolvePromptForIteration(state);
-    const adapter = getAgentAdapter(state.agent);
-    const command = resolveCommand(adapter.binaryName, options.agent.commandOverride ?? getAgentBinaryOverride(options.agent.type));
-    options.reporter?.onIterationStart?.({ iteration: state.iteration, maxIterations: maxIterations || undefined });
-    const result = await runAgentProcess(command, adapter, prompt, {
-      model: options.agent.model,
-      allowAllPermissions: options.agent.allowAllPermissions,
-      extraFlags: options.agent.extraFlags
-    }, {
-      cwd: options.cwd,
-      rawArgsMode: !!options.agent.commandOverride,
-      heartbeatIntervalMs: options.runtime?.heartbeatIntervalMs,
-      inactivityTimeoutMs: options.runtime?.inactivityTimeoutMs,
-      onHeartbeat: ({ elapsedMs, idleMs }) => {
-        options.reporter?.onHeartbeat?.({
+  try {
+    while (maxIterations === 0 || state.iteration <= maxIterations) {
+      const prompt = resolvePromptForIteration(state);
+      const adapter = getAgentAdapter(state.agent);
+      const command = resolveCommand(adapter.binaryName, options.agent.commandOverride ?? getAgentBinaryOverride(options.agent.type));
+      options.reporter?.onIterationStart?.({ iteration: state.iteration, maxIterations: maxIterations || undefined });
+      const result = await runAgentProcess(command, adapter, prompt, {
+        model: options.agent.model,
+        allowAllPermissions: options.agent.allowAllPermissions,
+        extraFlags: options.agent.extraFlags
+      }, {
+        cwd: options.cwd,
+        rawArgsMode: !!options.agent.commandOverride,
+        heartbeatIntervalMs: options.runtime?.heartbeatIntervalMs,
+        inactivityTimeoutMs: options.runtime?.inactivityTimeoutMs,
+        cancelSignal: options.runtime?.cancelSignal,
+        onStdoutChunk: (chunk) => {
+          options.reporter?.onStdoutChunk?.(chunk);
+        },
+        onStderrChunk: (chunk) => {
+          options.reporter?.onStderrChunk?.(chunk);
+        },
+        onHeartbeat: ({ elapsedMs, idleMs }) => {
+          options.reporter?.onHeartbeat?.({
+            iteration: state.iteration,
+            maxIterations: maxIterations || undefined,
+            elapsedMs,
+            idleMs
+          });
+        }
+      });
+      const normalized = adapter.normalizeOutput(result.stdout || `${result.stdout}
+${result.stderr}`);
+      const success = checkTerminalPromise(normalized, options.completion.success);
+      const abort = options.completion.abort ? checkTerminalPromise(normalized, options.completion.abort) : false;
+      const question = adapter.detectQuestion(normalized);
+      let answerProvided = false;
+      let answerLength;
+      if (question && options.interaction?.onQuestion) {
+        const answer = await options.interaction.onQuestion(question);
+        if (answer?.trim()) {
+          answerProvided = true;
+          answerLength = answer.trim().length;
+          state.prompt = {
+            ...state.prompt,
+            text: appendAnswerContext(resolvePromptForIteration(state), answer),
+            filePath: undefined,
+            append: undefined
+          };
+        }
+      }
+      auditStore.appendIteration(runId, {
+        iteration: state.iteration,
+        exitCode: result.exitCode,
+        completed: success,
+        tools: result.toolCounts,
+        askedQuestion: !!question,
+        answerProvided,
+        ...answerLength ? { answerLength } : {}
+      });
+      options.reporter?.onIterationEnd?.({
+        iteration: state.iteration,
+        maxIterations: maxIterations || undefined,
+        exitCode: result.exitCode,
+        completed: success,
+        toolCounts: result.toolCounts
+      });
+      if (result.cancelled) {
+        const summary = createRunSummary("cancelled", { iteration: state.iteration });
+        auditStore.finalize(runId, {
+          endedAt: new Date().toISOString(),
+          status: "cancelled",
+          completedIterations: state.iteration,
+          summary
+        });
+        stateStore.clear();
+        options.reporter?.onCancelled?.({ iteration: state.iteration, maxIterations: maxIterations || undefined });
+        return { status: "cancelled", completedIterations: state.iteration };
+      }
+      if (result.timedOut) {
+        const summary = createRunSummary("timed-out", { iteration: state.iteration });
+        auditStore.finalize(runId, {
+          endedAt: new Date().toISOString(),
+          status: "timed-out",
+          completedIterations: state.iteration,
+          summary
+        });
+        options.reporter?.onTimeout?.({
           iteration: state.iteration,
           maxIterations: maxIterations || undefined,
-          elapsedMs,
-          idleMs
+          idleMs: options.runtime?.inactivityTimeoutMs ?? 0,
+          timeoutMs: options.runtime?.inactivityTimeoutMs ?? 0,
+          resumeHint: buildResumeHint(options.cwd)
         });
+        return { status: "timed-out", completedIterations: state.iteration };
       }
-    });
-    const normalized = adapter.normalizeOutput(`${result.stdout}
-${result.stderr}`);
-    const success = checkTerminalPromise(normalized, options.completion.success);
-    const abort = options.completion.abort ? checkTerminalPromise(normalized, options.completion.abort) : false;
-    options.reporter?.onIterationEnd?.({
-      iteration: state.iteration,
-      maxIterations: maxIterations || undefined,
-      exitCode: result.exitCode,
-      completed: success
-    });
-    if (result.timedOut) {
-      stateStore.clear();
-      options.reporter?.onTimeout?.({
-        iteration: state.iteration,
-        maxIterations: maxIterations || undefined,
-        idleMs: options.runtime?.inactivityTimeoutMs ?? 0,
-        timeoutMs: options.runtime?.inactivityTimeoutMs ?? 0
-      });
-      return { status: "timed-out", completedIterations: state.iteration };
-    }
-    if (abort) {
-      stateStore.clear();
-      options.reporter?.onAbort?.({
-        iteration: state.iteration,
-        maxIterations: maxIterations || undefined,
-        promise: options.completion.abort
-      });
-      return { status: "aborted", completedIterations: state.iteration };
-    }
-    if (success && state.iteration >= minIterations) {
-      stateStore.clear();
-      options.reporter?.onComplete?.({ iteration: state.iteration, maxIterations: maxIterations || undefined });
-      return { status: "completed", completedIterations: state.iteration };
-    }
-    const question = adapter.detectQuestion(normalized);
-    if (question && options.interaction?.onQuestion) {
-      const answer = await options.interaction.onQuestion(question);
-      if (answer?.trim()) {
-        state.prompt = {
-          ...state.prompt,
-          text: appendAnswerContext(resolvePromptForIteration(state), answer),
-          filePath: undefined,
-          append: undefined
-        };
+      if (abort) {
+        const summary = createRunSummary("aborted", {
+          iteration: state.iteration,
+          promise: options.completion.abort
+        });
+        auditStore.finalize(runId, {
+          endedAt: new Date().toISOString(),
+          status: "aborted",
+          completedIterations: state.iteration,
+          summary
+        });
+        stateStore.clear();
+        options.reporter?.onAbort?.({
+          iteration: state.iteration,
+          maxIterations: maxIterations || undefined,
+          promise: options.completion.abort
+        });
+        return { status: "aborted", completedIterations: state.iteration };
+      }
+      if (success && state.iteration >= minIterations) {
+        const summary = createRunSummary("completed", { iteration: state.iteration });
+        auditStore.finalize(runId, {
+          endedAt: new Date().toISOString(),
+          status: "completed",
+          completedIterations: state.iteration,
+          summary
+        });
+        stateStore.clear();
+        options.reporter?.onComplete?.({ iteration: state.iteration, maxIterations: maxIterations || undefined });
+        return { status: "completed", completedIterations: state.iteration };
+      }
+      state.iteration += 1;
+      stateStore.save(state);
+      if (options.runtime?.iterationDelayMs) {
+        await Bun.sleep(options.runtime.iterationDelayMs);
       }
     }
-    state.iteration += 1;
-    stateStore.save(state);
-    if (options.runtime?.iterationDelayMs) {
-      await Bun.sleep(options.runtime.iterationDelayMs);
-    }
+  } catch (error) {
+    auditStore.finalize(runId, {
+      endedAt: new Date().toISOString(),
+      status: "crashed",
+      completedIterations: Math.max(state.iteration - 1, 0),
+      summary: createRunSummary("crashed", { iteration: state.iteration })
+    });
+    stateStore.clear();
+    throw error;
   }
+  auditStore.finalize(runId, {
+    endedAt: new Date().toISOString(),
+    status: "max-iterations",
+    completedIterations: maxIterations,
+    summary: createRunSummary("max-iterations", { iteration: maxIterations, maxIterations })
+  });
   stateStore.clear();
   return { status: "max-iterations", completedIterations: maxIterations };
+}
+
+// src/config/cli-config.ts
+import { existsSync as existsSync4, readFileSync as readFileSync4 } from "fs";
+import { homedir } from "os";
+import { join as join3 } from "path";
+var CLI_COLOR_NAMES = ["default", "gray", "blue", "cyan", "green", "yellow", "red", "magenta"];
+var DEFAULT_CLI_CONFIG = {
+  colors: {
+    core: "cyan",
+    agentStdout: "default",
+    agentStderr: "yellow"
+  }
+};
+function stripJsonComments(content) {
+  return content.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|\s+)\/\/.*$/gm, "$1");
+}
+function isColorName(value) {
+  return typeof value === "string" && CLI_COLOR_NAMES.includes(value);
+}
+function parseConfigFile(filePath) {
+  if (!existsSync4(filePath)) {
+    return {};
+  }
+  try {
+    return JSON.parse(stripJsonComments(readFileSync4(filePath, "utf8")));
+  } catch {
+    return {};
+  }
+}
+function mergeColors(base, source) {
+  if (!source) {
+    return base;
+  }
+  return {
+    core: isColorName(source.core) ? source.core : base.core,
+    agentStdout: isColorName(source.agentStdout) ? source.agentStdout : base.agentStdout,
+    agentStderr: isColorName(source.agentStderr) ? source.agentStderr : base.agentStderr
+  };
+}
+function loadCliConfig(options) {
+  const globalConfig = parseConfigFile(join3(options.homeDir ?? homedir(), ".ralph-loop", "config.jsonc"));
+  const projectConfig = parseConfigFile(join3(options.cwd, ".ralph-loop", "config.jsonc"));
+  return {
+    colors: mergeColors(mergeColors(DEFAULT_CLI_CONFIG.colors, globalConfig.colors), projectConfig.colors)
+  };
 }
 
 // bin/ralph-loop.ts
@@ -482,6 +785,7 @@ var maxIterationsIndex = parsedArgs.indexOf("--max-iterations");
 var abortPromiseIndex = parsedArgs.indexOf("--abort-promise");
 var completionPromiseIndex = parsedArgs.indexOf("--completion-promise");
 var inactivityTimeoutIndex = parsedArgs.indexOf("--last-activity-timeout");
+var resumeIndex = parsedArgs.indexOf("--resume");
 var agent = agentIndex >= 0 ? parsedArgs[agentIndex + 1] : "opencode";
 var promptFile = promptFileIndex >= 0 ? parsedArgs[promptFileIndex + 1] : undefined;
 var model = modelIndex >= 0 ? parsedArgs[modelIndex + 1] : undefined;
@@ -489,6 +793,9 @@ var maxIterations = maxIterationsIndex >= 0 ? Number(parsedArgs[maxIterationsInd
 var abortPromise = abortPromiseIndex >= 0 ? parsedArgs[abortPromiseIndex + 1] : undefined;
 var completionPromise = completionPromiseIndex >= 0 ? parsedArgs[completionPromiseIndex + 1] : "COMPLETE";
 var inactivityTimeoutMs = inactivityTimeoutIndex >= 0 ? Number(parsedArgs[inactivityTimeoutIndex + 1]) : undefined;
+var resume = resumeIndex >= 0;
+var appendPromptIndex = parsedArgs.indexOf("--append-prompt");
+var appendPrompt = appendPromptIndex >= 0 ? parsedArgs[appendPromptIndex + 1] : undefined;
 var promptParts = parsedArgs.filter((arg, index) => {
   return ![
     agentIndex,
@@ -504,25 +811,42 @@ var promptParts = parsedArgs.filter((arg, index) => {
     completionPromiseIndex,
     completionPromiseIndex + 1,
     inactivityTimeoutIndex,
-    inactivityTimeoutIndex + 1
+    inactivityTimeoutIndex + 1,
+    appendPromptIndex,
+    appendPromptIndex + 1,
+    resumeIndex
   ].includes(index) && !arg.startsWith("--");
 });
-if (!promptFile && promptParts.length === 0) {
+if (!resume && !promptFile && promptParts.length === 0) {
   console.error("Error: \u7F3A\u5C11 prompt \u8F93\u5165");
   process.exit(1);
 }
-await runLoop({
+var stateStore = createStateStore(process.cwd());
+var resumedState = resume ? stateStore.load() : null;
+var cliConfig = loadCliConfig({ cwd: process.cwd() });
+var controller = new AbortController;
+var cancelRun = () => {
+  controller.abort();
+};
+process.on("SIGINT", cancelRun);
+process.on("SIGTERM", cancelRun);
+if (resume && !resumedState) {
+  console.error("Error: \u5F53\u524D\u76EE\u5F55\u6CA1\u6709\u53EF\u6062\u590D\u7684 active-run \u72B6\u6001");
+  process.exit(1);
+}
+var result = await runLoop({
   cwd: process.cwd(),
   agent: {
-    type: agent,
-    model,
+    type: resumedState?.agent ?? agent,
+    model: resumedState?.model ?? model,
     extraFlags: passthroughArgs
   },
-  prompt: {
+  prompt: resumedState?.prompt ?? {
     text: promptParts.join(" ") || undefined,
-    filePath: promptFile
+    filePath: promptFile,
+    append: appendPrompt
   },
-  completion: {
+  completion: resumedState?.completion ?? {
     success: completionPromise,
     abort: abortPromise,
     maxIterations
@@ -530,7 +854,19 @@ await runLoop({
   runtime: {
     heartbeatIntervalMs: 1e4,
     iterationDelayMs: 1000,
-    inactivityTimeoutMs
+    inactivityTimeoutMs,
+    cancelSignal: controller.signal
   },
-  reporter: createConsoleReporter()
+  reporter: createConsoleReporter({
+    colors: cliConfig.colors,
+    forceColor: process.env.FORCE_COLOR === "1" ? true : undefined
+  })
 });
+process.off("SIGINT", cancelRun);
+process.off("SIGTERM", cancelRun);
+if (result.status === "aborted")
+  process.exit(2);
+if (result.status === "timed-out")
+  process.exit(124);
+if (result.status === "cancelled")
+  process.exit(130);

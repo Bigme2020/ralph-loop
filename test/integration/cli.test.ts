@@ -22,6 +22,7 @@ describe("cli 集成行为", () => {
         "COMPLETE",
         "--max-iterations",
         "1",
+        "--",
         join(process.cwd(), "test", "fixtures", "fake-agents", "fake-agent-success.ts"),
       ],
       {
@@ -125,4 +126,60 @@ describe("cli 集成行为", () => {
     expect(exitCode).toBe(130);
     expect(stdout).toContain("cancelled after iteration 1");
   }, 2_000);
+
+  it("从项目配置读取 CLI 配色", async () => {
+    const cwd = join(tmpdir(), `ralph-loop-colors-${Date.now()}`);
+    const promptPath = join(cwd, "prompt.md");
+    const bunBinary = process.execPath;
+    mkdirSync(join(cwd, ".ralph-loop"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".ralph-loop", "config.jsonc"),
+      `{
+        "colors": {
+          "core": "magenta",
+          "agentStdout": "green",
+          "agentStderr": "red"
+        }
+      }`,
+      "utf8",
+    );
+    writeFileSync(promptPath, "执行测试任务", "utf8");
+
+    const proc = Bun.spawn(
+      [
+        bunBinary,
+        "run",
+        join(process.cwd(), "bin", "ralph-loop.ts"),
+        "--agent",
+        "opencode",
+        "--prompt-file",
+        promptPath,
+        "--completion-promise",
+        "COMPLETE",
+        "--max-iterations",
+        "1",
+        "--",
+        join(process.cwd(), "test", "fixtures", "fake-agents", "fake-agent-success.ts"),
+      ],
+      {
+        cwd,
+        stdout: "pipe",
+        stderr: "pipe",
+        env: {
+          ...process.env,
+          FORCE_COLOR: "1",
+          RALPH_OPENCODE_BINARY: bunBinary,
+        },
+      },
+    );
+
+    const stdout = await new Response(proc.stdout).text();
+    const stderr = await new Response(proc.stderr).text();
+    const exitCode = await proc.exited;
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toBe("");
+    expect(stdout).toContain("\u001b[35m== Ralph Loop ==\u001b[0m");
+    expect(stdout).toContain("\u001b[32mreceived: 执行测试任务\n<promise>COMPLETE</promise>\n\u001b[0m");
+  });
 });

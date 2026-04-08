@@ -1,522 +1,88 @@
 #!/usr/bin/env bun
 // @bun
 
-// bin/ralph-run-openspec.ts
-import { join as join4 } from "path";
-
 // openspec-wrapper/index.ts
-import { existsSync as existsSync3, readdirSync } from "fs";
-import { join as join3 } from "path";
-
-// src/core/completion.ts
-function stripAnsi(input) {
-  return input.replace(/\u001b\[[0-9;]*m/g, "");
-}
-function getLastNonEmptyLine(output) {
-  const lines = stripAnsi(output).replace(/\r\n/g, `
-`).split(`
-`).map((line) => line.trim()).filter(Boolean);
-  return lines.length > 0 ? lines[lines.length - 1] : null;
-}
-function checkTerminalPromise(output, promise) {
-  const lastLine = getLastNonEmptyLine(output);
-  if (!lastLine)
-    return false;
-  const escaped = promise.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`^<promise>\\s*${escaped}\\s*</promise>$`, "i").test(lastLine);
-}
-// src/core/prompt-source.ts
-import { existsSync, readFileSync, statSync } from "fs";
-function resolvePromptText(input) {
-  const parts = [];
-  if (input.filePath) {
-    if (!existsSync(input.filePath)) {
-      throw new Error(`prompt \u6587\u4EF6\u4E0D\u5B58\u5728: ${input.filePath}`);
-    }
-    if (!statSync(input.filePath).isFile()) {
-      throw new Error(`prompt \u8DEF\u5F84\u4E0D\u662F\u6587\u4EF6: ${input.filePath}`);
-    }
-    const content = readFileSync(input.filePath, "utf8").trim();
-    if (!content) {
-      throw new Error(`prompt \u6587\u4EF6\u4E3A\u7A7A: ${input.filePath}`);
-    }
-    parts.push(content);
-  }
-  if (input.text?.trim()) {
-    parts.push(input.text.trim());
-  }
-  if (input.append?.trim()) {
-    parts.push(input.append.trim());
-  }
-  if (parts.length === 0) {
-    throw new Error("\u5FC5\u987B\u63D0\u4F9B prompt \u6587\u672C\u6216 prompt \u6587\u4EF6");
-  }
-  return parts.join(`
-
-`);
-}
-
-// src/core/state-store.ts
-import { existsSync as existsSync2, mkdirSync, readFileSync as readFileSync2, rmSync, writeFileSync } from "fs";
+import { existsSync, readdirSync } from "fs";
 import { join } from "path";
-function createStateStore(cwd, stateDirName = ".ralph-loop") {
-  const stateDir = join(cwd, stateDirName);
-  const statePath = join(stateDir, "active-run.json");
-  return {
-    stateDir,
-    statePath,
-    load() {
-      if (!existsSync2(statePath)) {
-        return null;
-      }
-      try {
-        return JSON.parse(readFileSync2(statePath, "utf8"));
-      } catch {
-        return null;
-      }
-    },
-    save(state) {
-      mkdirSync(stateDir, { recursive: true });
-      writeFileSync(statePath, `${JSON.stringify(state, null, 2)}
-`, "utf8");
-    },
-    clear() {
-      if (existsSync2(statePath)) {
-        rmSync(statePath, { force: true });
-      }
-    }
-  };
-}
+var OPENSPEC_PROMPT_TEMPLATE = `# \u6267\u884C OpenSpec \u53D8\u66F4
 
-// src/agents/shared.ts
-function appendExtraFlags(args, options) {
-  if (options.extraFlags?.length) {
-    args.push(...options.extraFlags);
-  }
-  return args;
-}
-function defaultNormalizeOutput(output) {
-  return output;
-}
-function defaultDetectQuestion(output) {
-  const match = output.match(/(?:question|asking|please confirm|do you want|should i|can i)\s*[:\-]?\s*(.+)/i);
-  return match ? match[1].trim() : null;
-}
-function defaultParseToolName(line) {
-  const match = line.match(/(?:Tool:|Using|Calling|Running)\s+([A-Za-z0-9_.-]+)/i);
-  return match ? match[1] : null;
-}
+\u6267\u884C\u4EE5\u4E0B OpenSpec change\uFF1A
 
-// src/agents/claude-code.ts
-function extractDisplayLines(output) {
-  const results = [];
-  for (const line of output.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed.startsWith("{")) {
-      if (trimmed)
-        results.push(trimmed);
-      continue;
-    }
-    try {
-      const payload = JSON.parse(trimmed);
-      const content = payload.message?.content ?? [];
-      for (const block of content) {
-        if (block.type === "text" && block.text?.trim()) {
-          results.push(block.text.trim());
-        }
-      }
-    } catch {
-      if (trimmed)
-        results.push(trimmed);
-    }
-  }
-  return results;
-}
-var claudeCodeAdapter = {
-  type: "claude-code",
-  binaryName: "claude",
-  buildArgs(prompt, options) {
-    const args = ["-p", prompt];
-    if (options.model)
-      args.push("--model", options.model);
-    if (options.allowAllPermissions)
-      args.push("--dangerously-skip-permissions");
-    return appendExtraFlags(args, options);
-  },
-  parseToolName(line) {
-    const cleanLine = line.trim();
-    const match = cleanLine.match(/(?:Using|Called|Tool:)\s+([A-Za-z0-9_.-]+)/i);
-    return match ? match[1] : null;
-  },
-  normalizeOutput(output) {
-    return extractDisplayLines(output).join(`
-`);
-  },
-  detectQuestion(output) {
-    return defaultDetectQuestion(extractDisplayLines(output).join(`
-`));
-  }
-};
 
-// src/agents/codex.ts
-var codexAdapter = {
-  type: "codex",
-  binaryName: "codex",
-  buildArgs(prompt, options) {
-    const args = ["exec"];
-    if (options.model)
-      args.push("--model", options.model);
-    if (options.allowAllPermissions)
-      args.push("--full-auto");
-    appendExtraFlags(args, options);
-    args.push(prompt);
-    return args;
-  },
-  parseToolName: defaultParseToolName,
-  normalizeOutput: defaultNormalizeOutput,
-  detectQuestion: defaultDetectQuestion
-};
+\`openspec/changes/<CHANGE_ID>/\`
 
-// src/agents/copilot.ts
-var copilotAdapter = {
-  type: "copilot",
-  binaryName: "copilot",
-  buildArgs(prompt, options) {
-    const args = ["-p", prompt];
-    if (options.model)
-      args.push("--model", options.model);
-    if (options.allowAllPermissions)
-      args.push("--allow-all", "--no-ask-user");
-    return appendExtraFlags(args, options);
-  },
-  parseToolName: defaultParseToolName,
-  normalizeOutput: defaultNormalizeOutput,
-  detectQuestion: defaultDetectQuestion
-};
+\u53D8\u66F4\u8DEF\u5F84\u4F1A\u5728\u8FD0\u884C\u65F6\u63D0\u4F9B\uFF0C\u8BF7\u4ECE\u7528\u6237\u8F93\u5165\u4E2D\u83B7\u53D6\u5B9E\u9645\u7684 change \u76EE\u5F55\u8DEF\u5F84\u3002
 
-// src/agents/opencode.ts
-var opencodeAdapter = {
-  type: "opencode",
-  binaryName: "opencode",
-  buildArgs(prompt, options) {
-    const args = ["run"];
-    if (options.model)
-      args.push("-m", options.model);
-    appendExtraFlags(args, options);
-    args.push(prompt);
-    return args;
-  },
-  parseToolName(line) {
-    const match = line.match(/^\|\s{2}([A-Za-z0-9_-]+)/);
-    return match ? match[1] : null;
-  },
-  normalizeOutput: defaultNormalizeOutput,
-  detectQuestion(output) {
-    if (/^\|\s{2}question\b/im.test(output)) {
-      return defaultDetectQuestion(output);
-    }
-    return null;
-  }
-};
+\u5FC5\u987B\u9605\u8BFB\u5E76\u9075\u5FAA\uFF1A
 
-// src/agents/registry.ts
-var adapters = {
-  opencode: opencodeAdapter,
-  "claude-code": claudeCodeAdapter,
-  codex: codexAdapter,
-  copilot: copilotAdapter
-};
-function getAgentAdapter(type) {
-  return adapters[type];
-}
-function getAgentBinaryOverride(type, env = process.env) {
-  switch (type) {
-    case "opencode":
-      return env.RALPH_OPENCODE_BINARY;
-    case "claude-code":
-      return env.RALPH_CLAUDE_BINARY;
-    case "codex":
-      return env.RALPH_CODEX_BINARY;
-    case "copilot":
-      return env.RALPH_COPILOT_BINARY;
-  }
-}
-function resolveCommand(binaryName, override) {
-  if (override)
-    return override;
-  if (process.platform === "win32" && !Bun.which(binaryName)) {
-    const cmdBinary = `${binaryName}.cmd`;
-    if (Bun.which(cmdBinary))
-      return cmdBinary;
-  }
-  return binaryName;
-}
+- \`proposal.md\`
+- \`spec.md\`
+- \`design.md\`
+- \`tasks.md\`
 
-// src/core/process-runner.ts
-async function runAgentProcess(command, adapter, prompt, options, runtime = {}) {
-  const args = runtime.rawArgsMode ? [...options.extraFlags ?? [], prompt] : adapter.buildArgs(prompt, options);
-  const proc = Bun.spawn([command, ...args], {
-    cwd: runtime.cwd ?? process.cwd(),
-    stdin: "ignore",
-    stdout: "pipe",
-    stderr: "pipe",
-    env: {
-      ...process.env,
-      ...adapter.buildEnv?.(options) ?? {}
-    }
-  });
-  let stdout = "";
-  let stderr = "";
-  let timedOut = false;
-  const startedAt = Date.now();
-  let lastActivityAt = Date.now();
-  const readStream = async (stream, onChunk) => {
-    if (!stream)
-      return;
-    const reader = stream.getReader();
-    const decoder = new TextDecoder;
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done)
-        break;
-      const text = decoder.decode(value, { stream: true });
-      if (!text)
-        continue;
-      lastActivityAt = Date.now();
-      onChunk(text);
-    }
-  };
-  const heartbeatIntervalMs = runtime.heartbeatIntervalMs ?? 1e4;
-  const timer = setInterval(() => {
-    const now = Date.now();
-    runtime.onHeartbeat?.({
-      elapsedMs: now - startedAt,
-      idleMs: now - lastActivityAt
-    });
-    if (runtime.inactivityTimeoutMs && now - lastActivityAt >= runtime.inactivityTimeoutMs) {
-      timedOut = true;
-      try {
-        proc.kill();
-      } catch {}
-    }
-  }, heartbeatIntervalMs);
-  await Promise.all([
-    readStream(proc.stdout, (chunk) => {
-      stdout += chunk;
-    }),
-    readStream(proc.stderr, (chunk) => {
-      stderr += chunk;
-    }),
-    proc.exited
-  ]);
-  clearInterval(timer);
-  return {
-    stdout,
-    stderr,
-    exitCode: proc.exitCode ?? (timedOut ? 124 : 1),
-    timedOut
-  };
-}
+\u5982\u679C \`spec.md\` \u4F4D\u4E8E\u5B50\u76EE\u5F55\uFF0C\u4E5F\u5FC5\u987B\u5168\u90E8\u9605\u8BFB\u3002
 
-// src/core/question-flow.ts
-function appendAnswerContext(prompt, answer) {
-  const trimmedAnswer = answer.trim();
-  if (!trimmedAnswer) {
-    return prompt;
-  }
-  return `${prompt}
+\u6267\u884C\u89C4\u5219\uFF1A
 
-## \u4E0A\u4E00\u8F6E\u4EA4\u4E92\u56DE\u7B54
-${trimmedAnswer}`;
-}
+1. \u6BCF\u4E00\u8F6E\u53EA\u80FD\u9009\u62E9\u4E00\u4E2A\u672A\u5B8C\u6210\u4E14\u5F53\u524D\u53EF\u63A8\u8FDB\u7684\u6700\u5C0F\u4EFB\u52A1
+2. \u6BCF\u4E00\u8F6E\u53EA\u80FD\u63A8\u8FDB\u8FD9\u4E00\u4E2A\u4EFB\u52A1\uFF0C\u7981\u6B62\u540C\u65F6\u63A8\u8FDB\u591A\u4E2A\u4EFB\u52A1
+3. \u5373\u4F7F\u591A\u4E2A\u4EFB\u52A1\u53EF\u4EE5\u987A\u624B\u4E00\u8D77\u505A\uFF0C\u4E5F\u5FC5\u987B\u62C6\u5F00
+4. \u5B8C\u6210\u5F53\u524D\u4EFB\u52A1\u540E\u8FD0\u884C\u5FC5\u8981\u9A8C\u8BC1
+5. \u53EA\u6709\u4EFB\u52A1\u771F\u6B63\u5B8C\u6210\u540E\u624D\u80FD\u52FE\u9009 \`tasks.md\`\uFF0C\u5E76\u8F93\u51FA\u7B80\u77ED\u603B\u7ED3
+6. \u672A\u5B8C\u6210\u3001\u90E8\u5206\u5B8C\u6210\u3001\u9A8C\u8BC1\u4E0D\u5B8C\u6574\u7684\u4EFB\u52A1\u90FD\u4E0D\u8981\u52FE\u9009
+7. \u4E0D\u8981\u521B\u5EFA\u989D\u5916\u4EFB\u52A1\u7CFB\u7EDF
+8. \u4E0D\u8981\u521B\u5EFA\u989D\u5916\u6267\u884C\u8BB0\u5F55\u6587\u4EF6
+9. \u4E0D\u8981\u505A\u8D85\u51FA spec \u7684\u6539\u52A8
+10. \u5982\u679C\u963B\u585E\uFF0C\u53EA\u5728 \`tasks.md\` \u5BF9\u5E94\u4EFB\u52A1\u4E0B\u8865\u5145\u4E00\u884C\u7B80\u77ED\u5907\u6CE8\uFF0C\u8BB0\u5F55\u963B\u585E\u539F\u56E0\u548C\u4E0B\u4E00\u6B65\u5EFA\u8BAE
+11. \u5F53\u524D\u4EFB\u52A1\u6CA1\u6709\u5B8C\u6574\u95ED\u73AF\u524D\uFF0C\u4E0D\u8981\u5207\u6362\u5230\u5176\u4ED6\u4EFB\u52A1
 
-// src/core/loop-runner.ts
-function createInitialState(options) {
-  return {
-    active: true,
-    iteration: 1,
-    agent: options.agent.type,
-    model: options.agent.model,
-    prompt: options.prompt,
-    completion: options.completion,
-    runtime: options.runtime ?? {},
-    startedAt: new Date().toISOString()
-  };
-}
-function resolvePromptForIteration(state) {
-  return resolvePromptText(state.prompt);
-}
-async function runLoop(options) {
-  const stateStore = createStateStore(options.cwd);
-  const state = createInitialState(options);
-  const maxIterations = options.completion.maxIterations ?? 0;
-  const minIterations = options.completion.minIterations ?? 1;
-  const promptSource = options.prompt.filePath ?? "inline";
-  options.reporter?.onRunStart?.({
-    agent: options.agent.type,
-    model: options.agent.model,
-    promptSource
-  });
-  stateStore.save(state);
-  while (maxIterations === 0 || state.iteration <= maxIterations) {
-    const prompt = resolvePromptForIteration(state);
-    const adapter = getAgentAdapter(state.agent);
-    const command = resolveCommand(adapter.binaryName, options.agent.commandOverride ?? getAgentBinaryOverride(options.agent.type));
-    options.reporter?.onIterationStart?.({ iteration: state.iteration, maxIterations: maxIterations || undefined });
-    const result = await runAgentProcess(command, adapter, prompt, {
-      model: options.agent.model,
-      allowAllPermissions: options.agent.allowAllPermissions,
-      extraFlags: options.agent.extraFlags
-    }, {
-      cwd: options.cwd,
-      rawArgsMode: !!options.agent.commandOverride,
-      heartbeatIntervalMs: options.runtime?.heartbeatIntervalMs,
-      inactivityTimeoutMs: options.runtime?.inactivityTimeoutMs,
-      onHeartbeat: ({ elapsedMs, idleMs }) => {
-        options.reporter?.onHeartbeat?.({
-          iteration: state.iteration,
-          maxIterations: maxIterations || undefined,
-          elapsedMs,
-          idleMs
-        });
-      }
-    });
-    const normalized = adapter.normalizeOutput(`${result.stdout}
-${result.stderr}`);
-    const success = checkTerminalPromise(normalized, options.completion.success);
-    const abort = options.completion.abort ? checkTerminalPromise(normalized, options.completion.abort) : false;
-    options.reporter?.onIterationEnd?.({
-      iteration: state.iteration,
-      maxIterations: maxIterations || undefined,
-      exitCode: result.exitCode,
-      completed: success
-    });
-    if (result.timedOut) {
-      stateStore.clear();
-      options.reporter?.onTimeout?.({
-        iteration: state.iteration,
-        maxIterations: maxIterations || undefined,
-        idleMs: options.runtime?.inactivityTimeoutMs ?? 0,
-        timeoutMs: options.runtime?.inactivityTimeoutMs ?? 0
-      });
-      return { status: "timed-out", completedIterations: state.iteration };
-    }
-    if (abort) {
-      stateStore.clear();
-      options.reporter?.onAbort?.({
-        iteration: state.iteration,
-        maxIterations: maxIterations || undefined,
-        promise: options.completion.abort
-      });
-      return { status: "aborted", completedIterations: state.iteration };
-    }
-    if (success && state.iteration >= minIterations) {
-      stateStore.clear();
-      options.reporter?.onComplete?.({ iteration: state.iteration, maxIterations: maxIterations || undefined });
-      return { status: "completed", completedIterations: state.iteration };
-    }
-    const question = adapter.detectQuestion(normalized);
-    if (question && options.interaction?.onQuestion) {
-      const answer = await options.interaction.onQuestion(question);
-      if (answer?.trim()) {
-        state.prompt = {
-          ...state.prompt,
-          text: appendAnswerContext(resolvePromptForIteration(state), answer),
-          filePath: undefined,
-          append: undefined
-        };
-      }
-    }
-    state.iteration += 1;
-    stateStore.save(state);
-    if (options.runtime?.iterationDelayMs) {
-      await Bun.sleep(options.runtime.iterationDelayMs);
-    }
-  }
-  stateStore.clear();
-  return { status: "max-iterations", completedIterations: maxIterations };
-}
-// src/ui/console-reporter.ts
-function formatIterationLabel(context) {
-  if (context.maxIterations && context.maxIterations > 0) {
-    return `${context.iteration}/${context.maxIterations}`;
-  }
-  return `${context.iteration}`;
-}
-function createConsoleReporter() {
-  return {
-    onRunStart(summary) {
-      console.log("== Ralph Loop ==");
-      console.log(`Agent: ${summary.agent}`);
-      if (summary.model) {
-        console.log(`Model: ${summary.model}`);
-      }
-      console.log(`Prompt source: ${summary.promptSource}`);
-      console.log("");
-    },
-    onIterationStart(context) {
-      console.log(`-- Iteration ${formatIterationLabel(context)} --`);
-    },
-    onHeartbeat(context) {
-      console.log(`heartbeat: elapsed ${context.elapsedMs}ms, idle ${context.idleMs}ms`);
-    },
-    onIterationEnd(context) {
-      console.log(`iteration ${formatIterationLabel(context)} exit=${context.exitCode} completed=${context.completed}`);
-    },
-    onComplete(context) {
-      console.log(`complete after iteration ${formatIterationLabel(context)}`);
-    },
-    onAbort(context) {
-      console.log(`abort after iteration ${formatIterationLabel(context)} via ${context.promise}`);
-    },
-    onTimeout(context) {
-      console.log(`timeout after iteration ${formatIterationLabel(context)} idle=${context.idleMs}ms limit=${context.timeoutMs}ms`);
-    }
-  };
-}
-// src/install/paths.ts
-import { join as join2 } from "path";
-function getLauncherScript(sourcePath) {
-  return `#!/usr/bin/env bash
-set -euo pipefail
+\u5F53\u4E14\u4EC5\u5F53\u6240\u6709\u4EFB\u52A1\u5B8C\u6210\u4E14\u9A8C\u8BC1\u901A\u8FC7\u540E\uFF0C\u8F93\u51FA\uFF1A
 
-exec bun run "${sourcePath}" "$@"
-`;
-}
-function resolveGlobalBinDir(homeDir, env) {
-  return env.RALPH_BIN_DIR ?? join2(homeDir, ".bun", "bin");
-}
-function getCommandLinks(repoRoot, globalBinDir) {
-  return [
-    {
-      commandName: "ralph-loop",
-      sourcePath: join2(repoRoot, "bin", "ralph-loop.ts"),
-      targetPath: join2(globalBinDir, "ralph-loop")
-    },
-    {
-      commandName: "ralph-run-openspec",
-      sourcePath: join2(repoRoot, "bin", "ralph-run-openspec.ts"),
-      targetPath: join2(globalBinDir, "ralph-run-openspec")
-    }
-  ];
-}
-function getPathExportHint(globalBinDir, currentPath) {
-  const pathEntries = (currentPath ?? "").split(":").filter(Boolean);
-  if (pathEntries.includes(globalBinDir)) {
-    return null;
-  }
-  return `export PATH="${globalBinDir}:$PATH"`;
-}
-// openspec-wrapper/index.ts
+\`\`\`text
+<promise>COMPLETE</promise>
+\`\`\``;
 function buildOpenSpecPrompt(changeDir) {
   return `\u6267\u884C OpenSpec change\uFF1A${changeDir}`;
 }
+function buildRalphLoopArgs(options) {
+  const args = ["--agent", options.agent, options.promptText, "--append-prompt", options.appendPrompt];
+  if (options.maxIterations) {
+    args.push("--max-iterations", String(options.maxIterations));
+  }
+  if (options.model) {
+    args.push("--model", options.model);
+  }
+  if (options.extraArgs?.length) {
+    args.push("--", ...options.extraArgs);
+  }
+  return args;
+}
+function resolveRalphLoopCommand(_currentRepoRoot) {
+  const globalCommand = Bun.which("ralph-loop");
+  if (globalCommand) {
+    return globalCommand;
+  }
+  return join(import.meta.dir, "..", "bin", "ralph-loop.ts");
+}
+function resolveRalphLoopInvocation(currentRepoRoot) {
+  const command = resolveRalphLoopCommand(currentRepoRoot);
+  if (command.endsWith(".ts")) {
+    return {
+      command: process.execPath,
+      args: ["run", command]
+    };
+  }
+  return {
+    command,
+    args: []
+  };
+}
 function findSpecFiles(changeDir) {
-  const specsDir = join3(changeDir, "specs");
+  const specsDir = join(changeDir, "specs");
   const result = [];
   const walk = (dir) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const fullPath = join3(dir, entry.name);
+      const fullPath = join(dir, entry.name);
       if (entry.isDirectory()) {
         walk(fullPath);
         continue;
@@ -526,7 +92,7 @@ function findSpecFiles(changeDir) {
       }
     }
   };
-  if (!existsSync3(specsDir)) {
+  if (!existsSync(specsDir)) {
     return [];
   }
   walk(specsDir);
@@ -535,14 +101,14 @@ function findSpecFiles(changeDir) {
 function validateOpenSpecChange(changeDir) {
   const promptFiles = ["proposal.md", "design.md", "tasks.md"];
   for (const name of promptFiles) {
-    const fullPath = join3(changeDir, name);
-    if (!existsSync3(fullPath)) {
+    const fullPath = join(changeDir, name);
+    if (!existsSync(fullPath)) {
       throw new Error(`missing file: ${fullPath}`);
     }
   }
   const specFiles = findSpecFiles(changeDir);
   if (specFiles.length === 0) {
-    throw new Error(`no spec.md found under: ${join3(changeDir, "specs")}`);
+    throw new Error(`no spec.md found under: ${join(changeDir, "specs")}`);
   }
 }
 function assertGitClean(repoRoot) {
@@ -559,7 +125,7 @@ function assertGitClean(repoRoot) {
   }
 }
 async function runOpenSpecWrapper(options) {
-  const changeDir = join3(options.repoRoot, "openspec", "changes", options.changeId);
+  const changeDir = join(options.repoRoot, "openspec", "changes", options.changeId);
   validateOpenSpecChange(changeDir);
   if (!options.skipGitCleanCheck) {
     assertGitClean(options.repoRoot);
@@ -572,7 +138,6 @@ async function runOpenSpecWrapper(options) {
   console.log("== OpenSpec Ralph Run ==");
   console.log(`Change ID       : ${options.changeId}`);
   console.log(`Change dir      : ${changeDir}`);
-  console.log(`Prompt file     : ${options.promptFile}`);
   console.log(`Agent           : ${options.agent}`);
   if (options.maxIterations) {
     console.log(`Max iterations  : ${options.maxIterations}`);
@@ -581,27 +146,29 @@ async function runOpenSpecWrapper(options) {
     console.log(`Model           : ${options.model}`);
   }
   console.log("");
-  await runLoop({
-    cwd: options.repoRoot,
-    agent: {
-      type: options.agent,
+  const ralphLoopInvocation = resolveRalphLoopInvocation(options.repoRoot);
+  const proc = Bun.spawn([
+    ralphLoopInvocation.command,
+    ...ralphLoopInvocation.args,
+    ...buildRalphLoopArgs({
+      promptText: OPENSPEC_PROMPT_TEMPLATE,
+      appendPrompt: buildOpenSpecPrompt(changeDir),
+      agent: options.agent,
       model: options.model,
-      extraFlags: options.extraArgs
-    },
-    prompt: {
-      filePath: options.promptFile,
-      append: buildOpenSpecPrompt(changeDir)
-    },
-    completion: {
-      success: "COMPLETE",
-      maxIterations: options.maxIterations
-    },
-    runtime: {
-      heartbeatIntervalMs: 1e4,
-      iterationDelayMs: 1000
-    },
-    reporter: createConsoleReporter()
+      maxIterations: options.maxIterations,
+      extraArgs: options.extraArgs
+    })
+  ], {
+    cwd: options.repoRoot,
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+    env: process.env
   });
+  const exitCode = await proc.exited;
+  if (exitCode !== 0) {
+    process.exit(exitCode);
+  }
 }
 
 // bin/ralph-run-openspec.ts
@@ -671,7 +238,6 @@ if (maxIterations !== undefined && (!Number.isInteger(maxIterations) || maxItera
 await runOpenSpecWrapper({
   repoRoot: process.cwd(),
   changeId,
-  promptFile: join4(process.cwd(), "openspec-wrapper", "openspec-prompt-file.md"),
   agent,
   model,
   maxIterations,
