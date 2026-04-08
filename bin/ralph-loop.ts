@@ -3,6 +3,7 @@
 import { createConsoleReporter } from "../src/ui/console-reporter";
 import { createStateStore } from "../src/core/state-store";
 import { runLoop } from "../src/core/loop-runner";
+import { loadCliConfig } from "../src/config/cli-config";
 
 const args = process.argv.slice(2);
 const passthroughIndex = args.indexOf("--");
@@ -57,6 +58,7 @@ if (!resume && !promptFile && promptParts.length === 0) {
 
 const stateStore = createStateStore(process.cwd());
 const resumedState = resume ? stateStore.load() : null;
+const cliConfig = loadCliConfig({ cwd: process.cwd() });
 const controller = new AbortController();
 
 const cancelRun = () => {
@@ -94,7 +96,10 @@ const result = await runLoop({
     inactivityTimeoutMs,
     cancelSignal: controller.signal,
   },
-  reporter: createConsoleReporter(),
+  reporter: createConsoleReporter({
+    colors: cliConfig.colors,
+    forceColor: process.env.FORCE_COLOR === "1" ? true : undefined,
+  }),
 });
 
 process.off("SIGINT", cancelRun);
