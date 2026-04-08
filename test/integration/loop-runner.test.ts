@@ -68,6 +68,34 @@ describe("loop runner 集成行为", () => {
     rmSync(cwd, { recursive: true, force: true });
   });
 
+  it("在 stderr 仍有附加日志时也会在成功 promise 后停止", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ralph-loop-run-"));
+    const result = await runLoop({
+      cwd,
+      agent: {
+        type: "opencode",
+        commandOverride: bunBinary,
+        extraFlags: [join(fixturesDir, "fake-agent-success-stderr.ts")],
+      },
+      prompt: {
+        text: "hello",
+      },
+      completion: {
+        success: "COMPLETE",
+        maxIterations: 2,
+      },
+      runtime: {
+        iterationDelayMs: 1,
+        heartbeatIntervalMs: 10_000,
+      },
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.completedIterations).toBe(1);
+
+    rmSync(cwd, { recursive: true, force: true });
+  });
+
   it("在非零退出后持续重试直到达到最大迭代次数", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ralph-loop-run-"));
     const result = await runLoop({
