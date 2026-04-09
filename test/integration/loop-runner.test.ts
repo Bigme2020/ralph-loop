@@ -68,6 +68,62 @@ describe("loop runner 集成行为", () => {
     rmSync(cwd, { recursive: true, force: true });
   });
 
+  it("在 stdout 命中完成 promise 且 stderr 仍有尾行时仍应完成运行", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ralph-loop-run-"));
+    const result = await runLoop({
+      cwd,
+      agent: {
+        type: "opencode",
+        commandOverride: bunBinary,
+        extraFlags: [join(fixturesDir, "fake-agent-success-with-stderr-tail.ts")],
+      },
+      prompt: {
+        text: "hello",
+      },
+      completion: {
+        success: "COMPLETE",
+        maxIterations: 2,
+      },
+      runtime: {
+        iterationDelayMs: 1,
+        heartbeatIntervalMs: 10_000,
+      },
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.completedIterations).toBe(1);
+
+    rmSync(cwd, { recursive: true, force: true });
+  });
+
+  it("在回放真实 OpenSpec 完成 transcript 时应单轮终止", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ralph-loop-run-"));
+    const result = await runLoop({
+      cwd,
+      agent: {
+        type: "opencode",
+        commandOverride: bunBinary,
+        extraFlags: [join(fixturesDir, "fake-agent-openspec-complete-transcript.ts")],
+      },
+      prompt: {
+        text: "hello",
+      },
+      completion: {
+        success: "COMPLETE",
+        maxIterations: 2,
+      },
+      runtime: {
+        iterationDelayMs: 1,
+        heartbeatIntervalMs: 10_000,
+      },
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.completedIterations).toBe(1);
+
+    rmSync(cwd, { recursive: true, force: true });
+  });
+
   it("在非零退出后持续重试直到达到最大迭代次数", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ralph-loop-run-"));
     const result = await runLoop({
@@ -212,6 +268,69 @@ describe("loop runner 集成行为", () => {
 
     expect(result.status).toBe("aborted");
     expect(existsSync(join(cwd, ".ralph-loop", "active-run.json"))).toBeFalse();
+
+    rmSync(cwd, { recursive: true, force: true });
+  });
+
+  it("在 stdout 命中 abort promise 且 stderr 仍有尾行时仍应中止运行", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ralph-loop-run-"));
+    const result = await runLoop({
+      cwd,
+      agent: {
+        type: "opencode",
+        commandOverride: bunBinary,
+        extraFlags: [join(fixturesDir, "fake-agent-abort-with-stderr-tail.ts")],
+      },
+      prompt: {
+        text: "hello",
+      },
+      completion: {
+        success: "COMPLETE",
+        abort: "ABORT",
+        maxIterations: 2,
+      },
+      runtime: {
+        heartbeatIntervalMs: 10_000,
+      },
+    });
+
+    expect(result.status).toBe("aborted");
+
+    rmSync(cwd, { recursive: true, force: true });
+  });
+
+  it("在达到最小迭代次数前命中完成信号时通过 reporter 给出延迟终止提示", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ralph-loop-run-"));
+    const deferredEvents: Array<{ iteration: number; maxIterations?: number; minIterations: number; promise: string }> = [];
+
+    const result = await runLoop({
+      cwd,
+      agent: {
+        type: "opencode",
+        commandOverride: bunBinary,
+        extraFlags: [join(fixturesDir, "fake-agent-success.ts")],
+      },
+      prompt: {
+        text: "hello",
+      },
+      completion: {
+        success: "COMPLETE",
+        minIterations: 2,
+        maxIterations: 2,
+      },
+      runtime: {
+        iterationDelayMs: 1,
+        heartbeatIntervalMs: 10_000,
+      },
+      reporter: {
+        onSignalDeferred(context) {
+          deferredEvents.push(context);
+        },
+      },
+    });
+
+    expect(result.status).toBe("completed");
+    expect(deferredEvents).toEqual([{ iteration: 1, maxIterations: 2, minIterations: 2, promise: "COMPLETE" }]);
 
     rmSync(cwd, { recursive: true, force: true });
   });

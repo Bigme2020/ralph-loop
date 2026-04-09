@@ -69,6 +69,9 @@ function createConsoleReporter(options = {}) {
         writeCoreLine(`tools: ${tools.map(([name, count]) => `${name}=${count}`).join(", ")}`);
       }
     },
+    onSignalDeferred(context) {
+      writeCoreLine(`signal ${context.promise} detected at iteration ${formatIterationLabel(context)} but deferred until minIterations=${context.minIterations}`);
+    },
     onComplete(context) {
       writeCoreLine(`complete after iteration ${formatIterationLabel(context)}`);
     },
@@ -232,10 +235,13 @@ function resolvePromptText(input) {
 
 // src/core/completion.ts
 function stripAnsi(input) {
-  return input.replace(/\u001b\[[0-9;]*m/g, "");
+  return input.replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, "").replace(/\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)/g, "");
+}
+function stripTrailingNoise(input) {
+  return stripAnsi(input).replace(/[\u200B-\u200D\u2060\uFEFF]+$/g, "").replace(/[\b\u0000]+$/g, "").trimEnd();
 }
 function getLastNonEmptyLine(output) {
-  const lines = stripAnsi(output).replace(/\r\n/g, `
+  const lines = stripTrailingNoise(output).replace(/\r\n/g, `
 `).split(`
 `).map((line) => line.trim()).filter(Boolean);
   return lines.length > 0 ? lines[lines.length - 1] : null;
@@ -243,7 +249,7 @@ function getLastNonEmptyLine(output) {
 function checkTerminalPromise(output, promise) {
   const escaped = promise.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const terminalPromisePattern = new RegExp(`^<promise>\\s*${escaped}\\s*</promise>$`, "i");
-  const normalized = stripAnsi(output).replace(/\r\n/g, `
+  const normalized = stripTrailingNoise(output).replace(/\r\n/g, `
 `).trim();
   const lastLine = getLastNonEmptyLine(normalized);
   if (lastLine && terminalPromisePattern.test(lastLine)) {
@@ -272,6 +278,11 @@ function defaultParseToolName(line) {
 }
 
 // src/agents/claude-code.ts
+function collectTextCandidate(results, value) {
+  if (value?.trim()) {
+    results.push(value.trim());
+  }
+}
 function extractDisplayLines(output) {
   const results = [];
   for (const line of output.split(/\r?\n/)) {
@@ -283,10 +294,13 @@ function extractDisplayLines(output) {
     }
     try {
       const payload = JSON.parse(trimmed);
+      collectTextCandidate(results, payload.text);
+      collectTextCandidate(results, payload.content);
+      collectTextCandidate(results, payload.result);
       const content = payload.message?.content ?? [];
       for (const block of content) {
-        if (block.type === "text" && block.text?.trim()) {
-          results.push(block.text.trim());
+        if (block.type === "text") {
+          collectTextCandidate(results, block.text);
         }
       }
     } catch {
@@ -605,11 +619,12 @@ async function runLoop(options) {
           });
         }
       });
-      const normalized = adapter.normalizeOutput(result.stdout || `${result.stdout}
+      const normalizedStdout = adapter.normalizeOutput(result.stdout);
+      const normalizedCombined = adapter.normalizeOutput(`${result.stdout}
 ${result.stderr}`);
-      const success = checkTerminalPromise(normalized, options.completion.success);
-      const abort = options.completion.abort ? checkTerminalPromise(normalized, options.completion.abort) : false;
-      const question = adapter.detectQuestion(normalized);
+      const success = checkTerminalPromise(normalizedStdout, options.completion.success);
+      const abort = options.completion.abort ? checkTerminalPromise(normalizedStdout, options.completion.abort) : false;
+      const question = adapter.detectQuestion(normalizedCombined);
       let answerProvided = false;
       let answerLength;
       if (question && options.interaction?.onQuestion) {
@@ -688,6 +703,14 @@ ${result.stderr}`);
           promise: options.completion.abort
         });
         return { status: "aborted", completedIterations: state.iteration };
+      }
+      if (success && state.iteration < minIterations) {
+        options.reporter?.onSignalDeferred?.({
+          iteration: state.iteration,
+          maxIterations: maxIterations || undefined,
+          promise: options.completion.success,
+          minIterations
+        });
       }
       if (success && state.iteration >= minIterations) {
         const summary = createRunSummary("completed", { iteration: state.iteration });

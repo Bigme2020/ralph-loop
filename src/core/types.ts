@@ -31,6 +31,7 @@ export interface LoopReporter {
   onStderrChunk?(chunk: string): void;
   onHeartbeat?(context: ReporterEventContext & { elapsedMs: number; idleMs: number }): void;
   onIterationEnd?(context: ReporterEventContext & { exitCode: number; completed: boolean; toolCounts: ToolSummary }): void;
+  onSignalDeferred?(context: ReporterEventContext & { promise: string; minIterations: number }): void;
   onComplete?(context: ReporterEventContext): void;
   onAbort?(context: ReporterEventContext & { promise: string }): void;
   onTimeout?(context: ReporterEventContext & { idleMs: number; timeoutMs: number; resumeHint?: string }): void;

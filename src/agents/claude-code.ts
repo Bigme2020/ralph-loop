@@ -1,6 +1,26 @@
 import { appendExtraFlags, defaultDetectQuestion } from "./shared";
 import type { AgentAdapter } from "./types";
 
+interface ClaudeTextBlock {
+  type?: string;
+  text?: string;
+}
+
+interface ClaudeJsonPayload {
+  text?: string;
+  content?: string;
+  message?: {
+    content?: ClaudeTextBlock[];
+  };
+  result?: string;
+}
+
+function collectTextCandidate(results: string[], value?: string) {
+  if (value?.trim()) {
+    results.push(value.trim());
+  }
+}
+
 function extractDisplayLines(output: string): string[] {
   const results: string[] = [];
 
@@ -12,11 +32,14 @@ function extractDisplayLines(output: string): string[] {
     }
 
     try {
-      const payload = JSON.parse(trimmed) as { message?: { content?: Array<{ type?: string; text?: string }> } };
+      const payload = JSON.parse(trimmed) as ClaudeJsonPayload;
+      collectTextCandidate(results, payload.text);
+      collectTextCandidate(results, payload.content);
+      collectTextCandidate(results, payload.result);
       const content = payload.message?.content ?? [];
       for (const block of content) {
-        if (block.type === "text" && block.text?.trim()) {
-          results.push(block.text.trim());
+        if (block.type === "text") {
+          collectTextCandidate(results, block.text);
         }
       }
     } catch {

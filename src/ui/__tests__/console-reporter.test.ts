@@ -60,4 +60,25 @@ describe("console reporter 模块", () => {
     expect(writes.stdout).toContain("\u001b[32magent ok\n\u001b[0m");
     expect(writes.stderr).toContain("\u001b[33magent warn\n\u001b[0m");
   });
+
+  it("在 signal 被 minIterations 延迟时输出提示", () => {
+    const lines: string[] = [];
+    const reporter = createConsoleReporter({
+      stdout: {
+        write(chunk: string) {
+          lines.push(chunk);
+          return true;
+        },
+      },
+    });
+
+    reporter.onSignalDeferred?.({
+      iteration: 1,
+      maxIterations: 3,
+      minIterations: 2,
+      promise: "COMPLETE",
+    });
+
+    expect(lines.some((line) => line.includes("signal COMPLETE detected at iteration 1/3 but deferred until minIterations=2"))).toBeTrue();
+  });
 });
