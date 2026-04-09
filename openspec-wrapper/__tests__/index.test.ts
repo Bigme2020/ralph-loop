@@ -83,6 +83,10 @@ describe("openspec wrapper 模块", () => {
   it("内置 OpenSpec prompt 模板包含关键执行约束", () => {
     expect(OPENSPEC_PROMPT_TEMPLATE).toContain("# 执行 OpenSpec 变更");
     expect(OPENSPEC_PROMPT_TEMPLATE).toContain("每一轮只能选择一个未完成且当前可推进的最小任务");
+    expect(OPENSPEC_PROMPT_TEMPLATE).toContain("只有在你真正准备结束本次运行时，才可以输出可识别信号");
+    expect(OPENSPEC_PROMPT_TEMPLATE).toContain("未结束时只用自然语言口头说明当前状态");
+    expect(OPENSPEC_PROMPT_TEMPLATE).not.toContain("[Pas未全部完成，因此此时不会输出：");
+    expect(OPENSPEC_PROMPT_TEMPLATE).not.toContain("[Pasted ~4 lines]");
     expect(OPENSPEC_PROMPT_TEMPLATE).toContain("<promise>COMPLETE</promise>");
   });
 

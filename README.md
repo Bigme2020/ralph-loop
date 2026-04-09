@@ -229,6 +229,13 @@ sequenceDiagram
 5. 只有当所有任务都完成时，才在最后一个非空行输出 <promise>COMPLETE</promise>。
 6. 如果遇到阻塞并且无法继续推进，才在最后一个非空行输出 <promise>ABORT</promise>。
 7. 如果任务还没完成，就不要输出任何 promise 标签，让 runtime 进入下一轮。
+
+信号输出规则：
+
+- 只有在你真正准备结束本次运行时，才可以输出可识别信号
+- 如果还要继续下一轮、还有未完成任务、只是阶段性汇报，或当前回复并不是为了显式结束本次运行，都不要输出任何可识别信号
+- 未结束时只用自然语言口头说明当前状态，不要输出 \`<promise>... </promise>\`、不要单独输出 \`COMPLETE\`、也不要输出其他可被外层识别为完成或中止的固定格式
+- 只有当所有任务完成且验证通过，并且你此刻就是要结束本次运行时，才在最后一个非空行输出 `<promise>COMPLETE</promise>`
 ```
 
 上面这个思路也可以替换成别的外部约束来源，例如：
@@ -351,8 +358,8 @@ RALPH_OPENCODE_BINARY="$(which opencode)" ralph-loop --prompt-file ./prompts/loo
   "colors": {
     "core": "cyan",
     "agentStdout": "default",
-    "agentStderr": "yellow"
-  }
+    "agentStderr": "yellow",
+  },
 }
 ```
 
