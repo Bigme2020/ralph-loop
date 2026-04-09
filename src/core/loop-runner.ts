@@ -105,14 +105,13 @@ export async function runLoop(options: LoopOptions): Promise<LoopRunResult> {
         },
       );
 
-      // Terminal promises belong to the agent's final user-facing response.
-      // stderr often contains transport/debug noise that should not force another iteration.
-      const normalized = adapter.normalizeOutput(result.stdout || `${result.stdout}\n${result.stderr}`);
-      const success = checkTerminalPromise(normalized, options.completion.success);
+      const normalizedStdout = adapter.normalizeOutput(result.stdout);
+      const normalizedCombined = adapter.normalizeOutput(`${result.stdout}\n${result.stderr}`);
+      const success = checkTerminalPromise(normalizedStdout, options.completion.success);
       const abort = options.completion.abort
-        ? checkTerminalPromise(normalized, options.completion.abort)
+        ? checkTerminalPromise(normalizedStdout, options.completion.abort)
         : false;
-      const question = adapter.detectQuestion(normalized);
+      const question = adapter.detectQuestion(normalizedCombined);
       let answerProvided = false;
       let answerLength: number | undefined;
 
@@ -197,6 +196,15 @@ export async function runLoop(options: LoopOptions): Promise<LoopRunResult> {
           promise: options.completion.abort!,
         });
         return { status: "aborted", completedIterations: state.iteration };
+      }
+
+      if (success && state.iteration < minIterations) {
+        options.reporter?.onSignalDeferred?.({
+          iteration: state.iteration,
+          maxIterations: maxIterations || undefined,
+          promise: options.completion.success,
+          minIterations,
+        });
       }
 
       if (success && state.iteration >= minIterations) {

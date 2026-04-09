@@ -85,6 +85,11 @@ export function createConsoleReporter(options: ConsoleReporterOptions = {}): Loo
         writeCoreLine(`tools: ${tools.map(([name, count]) => `${name}=${count}`).join(", ")}`);
       }
     },
+    onSignalDeferred(context) {
+      writeCoreLine(
+        `signal ${context.promise} detected at iteration ${formatIterationLabel(context)} but deferred until minIterations=${context.minIterations}`,
+      );
+    },
     onComplete(context) {
       writeCoreLine(`complete after iteration ${formatIterationLabel(context)}`);
     },

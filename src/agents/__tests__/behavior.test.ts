@@ -21,6 +21,15 @@ describe("agent adapter 行为", () => {
     expect(output).toBe("第一行\n第二行");
   });
 
+  it("保留 Claude Code JSON 流中的顶层 text 字段用于终止信号检测", () => {
+    const adapter = getAgentAdapter("claude-code");
+    const output = adapter.normalizeOutput(
+      JSON.stringify({ type: "assistant", text: "<promise>COMPLETE</promise>" }),
+    );
+
+    expect(output).toContain("<promise>COMPLETE</promise>");
+  });
+
   it("识别 opencode 输出中的 question 工具内容", () => {
     const adapter = getAgentAdapter("opencode");
     const question = adapter.detectQuestion("|  question Should I continue with the migration?");
