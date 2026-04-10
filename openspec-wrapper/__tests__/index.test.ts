@@ -58,6 +58,7 @@ describe("openspec wrapper 模块", () => {
         agent: "opencode",
         maxIterations: 3,
         model: "claude-sonnet-4",
+        reasoningLevel: "high",
         extraArgs: ["--sandbox", "workspace-write"],
       }),
     ).toEqual([
@@ -70,6 +71,8 @@ describe("openspec wrapper 模块", () => {
       "3",
       "--model",
       "claude-sonnet-4",
+      "--reasoning-level",
+      "high",
       "--",
       "--sandbox",
       "workspace-write",

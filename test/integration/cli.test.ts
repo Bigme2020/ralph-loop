@@ -13,6 +13,7 @@ describe("cli 集成行为", () => {
       [
         bunBinary,
         "run",
+        "--",
         join(process.cwd(), "bin", "ralph-loop.ts"),
         "--agent",
         "opencode",
@@ -43,6 +44,50 @@ describe("cli 集成行为", () => {
     expect(stdout).toContain("-- Iteration 1/1 --");
   });
 
+  it("在输出中展示模型和推理等级", async () => {
+    const promptPath = join(tmpdir(), `ralph-loop-cli-${Date.now()}.md`);
+    writeFileSync(promptPath, "执行测试任务", "utf8");
+
+    const bunBinary = process.execPath;
+    const proc = Bun.spawn(
+      [
+        bunBinary,
+        "run",
+        join(process.cwd(), "bin", "ralph-loop.ts"),
+        "--agent",
+        "opencode",
+        "--model",
+        "demo-model",
+        "--reasoning-level",
+        "medium",
+        "--prompt-file",
+        promptPath,
+        "--completion-promise",
+        "COMPLETE",
+        "--max-iterations",
+        "1",
+        "--",
+        join(process.cwd(), "test", "fixtures", "fake-agents", "fake-agent-success.ts"),
+      ],
+      {
+        cwd: process.cwd(),
+        stdout: "pipe",
+        stderr: "pipe",
+        env: {
+          ...process.env,
+          RALPH_OPENCODE_BINARY: bunBinary,
+        },
+      },
+    );
+
+    const stdout = await new Response(proc.stdout).text();
+    const exitCode = await proc.exited;
+
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("模型: demo-model");
+    expect(stdout).toContain("推理等级: medium");
+  });
+
   it("在指定 --resume 时恢复未完成运行", async () => {
     const cwd = join(tmpdir(), `ralph-loop-resume-${Date.now()}`);
     const bunBinary = process.execPath;
@@ -65,6 +110,7 @@ describe("cli 集成行为", () => {
       [
         bunBinary,
         "run",
+        "--",
         join(process.cwd(), "bin", "ralph-loop.ts"),
         "--resume",
         "--",
@@ -96,6 +142,7 @@ describe("cli 集成行为", () => {
       [
         bunBinary,
         "run",
+        "--",
         join(process.cwd(), "bin", "ralph-loop.ts"),
         "--agent",
         "opencode",
@@ -149,6 +196,7 @@ describe("cli 集成行为", () => {
       [
         bunBinary,
         "run",
+        "--",
         join(process.cwd(), "bin", "ralph-loop.ts"),
         "--agent",
         "opencode",

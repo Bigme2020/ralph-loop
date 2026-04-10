@@ -8,6 +8,7 @@ export interface OpenSpecWrapperOptions {
   changeId: string;
   agent: AgentType;
   model?: string;
+  reasoningLevel?: string;
   maxIterations?: number;
   extraArgs?: string[];
   skipGitCleanCheck?: boolean;
@@ -70,6 +71,7 @@ export function buildRalphLoopArgs(options: {
   appendPrompt: string;
   agent: AgentType;
   model?: string;
+  reasoningLevel?: string;
   maxIterations?: number;
   extraArgs?: string[];
 }): string[] {
@@ -81,6 +83,10 @@ export function buildRalphLoopArgs(options: {
 
   if (options.model) {
     args.push("--model", options.model);
+  }
+
+  if (options.reasoningLevel) {
+    args.push("--reasoning-level", options.reasoningLevel);
   }
 
   if (options.extraArgs?.length) {
@@ -193,7 +199,10 @@ export async function runOpenSpecWrapper(options: OpenSpecWrapperOptions): Promi
     console.log(`Max iterations  : ${options.maxIterations}`);
   }
   if (options.model) {
-    console.log(`Model           : ${options.model}`);
+    console.log(`模型             : ${options.model}`);
+  }
+  if (options.reasoningLevel) {
+    console.log(`推理等级         : ${options.reasoningLevel}`);
   }
   console.log("");
 
@@ -208,6 +217,7 @@ export async function runOpenSpecWrapper(options: OpenSpecWrapperOptions): Promi
         appendPrompt: buildOpenSpecPrompt(changeDir),
         agent: options.agent,
         model: options.model,
+        reasoningLevel: options.reasoningLevel,
         maxIterations: options.maxIterations,
         extraArgs: options.extraArgs,
       }),

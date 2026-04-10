@@ -19,6 +19,7 @@ describe("openspec bin 集成行为", () => {
       [
         Bun.which("bun")!,
         "run",
+        "--",
         join(process.cwd(), "bin", "ralph-run-openspec.ts"),
         "--change-id",
         "demo-change",
@@ -76,6 +77,7 @@ describe("openspec bin 集成行为", () => {
       [
         Bun.which("bun")!,
         "run",
+        "--",
         join(process.cwd(), "bin", "ralph-run-openspec.ts"),
         "--change-id",
         "demo-change",
@@ -85,6 +87,8 @@ describe("openspec bin 集成行为", () => {
         "opencode",
         "--model",
         "demo-model",
+        "--reasoning-level",
+        "high",
         "--",
         "--sandbox",
         "workspace-write",
@@ -122,6 +126,8 @@ describe("openspec bin 集成行为", () => {
       "2",
       "--model",
       "demo-model",
+      "--reasoning-level",
+      "high",
       "--",
       "--sandbox",
       "workspace-write",

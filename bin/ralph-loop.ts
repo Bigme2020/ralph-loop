@@ -12,6 +12,7 @@ const parsedArgs = passthroughIndex >= 0 ? args.slice(0, passthroughIndex) : arg
 const agentIndex = args.indexOf("--agent");
 const promptFileIndex = parsedArgs.indexOf("--prompt-file");
 const modelIndex = parsedArgs.indexOf("--model");
+const reasoningLevelIndex = parsedArgs.indexOf("--reasoning-level");
 const maxIterationsIndex = parsedArgs.indexOf("--max-iterations");
 const abortPromiseIndex = parsedArgs.indexOf("--abort-promise");
 const completionPromiseIndex = parsedArgs.indexOf("--completion-promise");
@@ -21,6 +22,7 @@ const resumeIndex = parsedArgs.indexOf("--resume");
 const agent = agentIndex >= 0 ? parsedArgs[agentIndex + 1] : "opencode";
 const promptFile = promptFileIndex >= 0 ? parsedArgs[promptFileIndex + 1] : undefined;
 const model = modelIndex >= 0 ? parsedArgs[modelIndex + 1] : undefined;
+const reasoningLevel = reasoningLevelIndex >= 0 ? parsedArgs[reasoningLevelIndex + 1] : undefined;
 const maxIterations = maxIterationsIndex >= 0 ? Number(parsedArgs[maxIterationsIndex + 1]) : undefined;
 const abortPromise = abortPromiseIndex >= 0 ? parsedArgs[abortPromiseIndex + 1] : undefined;
 const completionPromise = completionPromiseIndex >= 0 ? parsedArgs[completionPromiseIndex + 1] : "COMPLETE";
@@ -37,6 +39,8 @@ const promptParts = parsedArgs.filter((arg, index) => {
     promptFileIndex + 1,
     modelIndex,
     modelIndex + 1,
+    reasoningLevelIndex,
+    reasoningLevelIndex + 1,
     maxIterationsIndex,
     maxIterationsIndex + 1,
     abortPromiseIndex,
@@ -78,6 +82,7 @@ const result = await runLoop({
   agent: {
     type: resumedState?.agent ?? (agent as "opencode" | "claude-code" | "codex" | "copilot"),
     model: resumedState?.model ?? model,
+    reasoningLevel: resumedState?.reasoningLevel ?? reasoningLevel,
     extraFlags: passthroughArgs,
   },
   prompt: resumedState?.prompt ?? {

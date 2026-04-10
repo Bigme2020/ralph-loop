@@ -61,6 +61,28 @@ describe("console reporter 模块", () => {
     expect(writes.stderr).toContain("\u001b[33magent warn\n\u001b[0m");
   });
 
+  it("在启动摘要中输出模型和推理等级", () => {
+    const lines: string[] = [];
+    const reporter = createConsoleReporter({
+      stdout: {
+        write(chunk: string) {
+          lines.push(chunk);
+          return true;
+        },
+      },
+    });
+
+    reporter.onRunStart?.({
+      agent: "opencode",
+      model: "claude-sonnet-4.5",
+      reasoningLevel: "high",
+      promptSource: "inline",
+    });
+
+    expect(lines.some((line) => line.includes("模型: claude-sonnet-4.5"))).toBeTrue();
+    expect(lines.some((line) => line.includes("推理等级: high"))).toBeTrue();
+  });
+
   it("在 signal 被 minIterations 延迟时输出提示", () => {
     const lines: string[] = [];
     const reporter = createConsoleReporter({

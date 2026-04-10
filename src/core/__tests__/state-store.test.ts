@@ -12,6 +12,7 @@ function createState(): LoopState {
     iteration: 2,
     agent: "opencode",
     model: "anthropic/claude-sonnet-4.5",
+    reasoningLevel: "high",
     prompt: { text: "hello" },
     completion: { success: "COMPLETE", maxIterations: 5 },
     runtime: {},

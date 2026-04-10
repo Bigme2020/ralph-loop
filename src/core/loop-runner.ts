@@ -18,6 +18,7 @@ export function createInitialState(options: LoopOptions): LoopState {
     iteration: 1,
     agent: options.agent.type,
     model: options.agent.model,
+    reasoningLevel: options.agent.reasoningLevel,
     prompt: options.prompt,
     completion: options.completion,
     runtime: options.runtime ?? {},
@@ -46,6 +47,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopRunResult> {
   options.reporter?.onRunStart?.({
     agent: options.agent.type,
     model: options.agent.model,
+    reasoningLevel: options.agent.reasoningLevel,
     promptSource,
   });
 

@@ -59,11 +59,14 @@ export function createConsoleReporter(options: ConsoleReporterOptions = {}): Loo
   return {
     onRunStart(summary) {
       writeCoreLine("== Ralph Loop ==");
-      writeCoreLine(`Agent: ${summary.agent}`);
+      writeCoreLine(`智能体: ${summary.agent}`);
       if (summary.model) {
-        writeCoreLine(`Model: ${summary.model}`);
+        writeCoreLine(`模型: ${summary.model}`);
       }
-      writeCoreLine(`Prompt source: ${summary.promptSource}`);
+      if (summary.reasoningLevel) {
+        writeCoreLine(`推理等级: ${summary.reasoningLevel}`);
+      }
+      writeCoreLine(`Prompt 来源: ${summary.promptSource}`);
       stdout.write("\n");
     },
     onIterationStart(context) {
