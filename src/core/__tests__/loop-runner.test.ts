@@ -9,6 +9,7 @@ function createOptions(overrides: Partial<LoopOptions> = {}): LoopOptions {
     agent: {
       type: "opencode",
       model: "test-model",
+      reasoningLevel: "medium",
     },
     prompt: {
       text: "base prompt",
@@ -29,6 +30,7 @@ describe("loop runner 辅助函数", () => {
     expect(state.iteration).toBe(1);
     expect(state.agent).toBe("opencode");
     expect(state.model).toBe("test-model");
+    expect(state.reasoningLevel).toBe("medium");
     expect(state.prompt).toEqual({ text: "base prompt" });
     expect(state.completion).toEqual({ success: "COMPLETE", maxIterations: 3 });
     expect(state.runtime).toEqual({});

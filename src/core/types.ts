@@ -25,7 +25,7 @@ export interface ReporterEventContext {
 }
 
 export interface LoopReporter {
-  onRunStart?(summary: { agent: AgentType; model?: string; promptSource: string }): void;
+  onRunStart?(summary: { agent: AgentType; model?: string; reasoningLevel?: string; promptSource: string }): void;
   onIterationStart?(context: ReporterEventContext): void;
   onStdoutChunk?(chunk: string): void;
   onStderrChunk?(chunk: string): void;
@@ -43,6 +43,7 @@ export interface LoopState {
   iteration: number;
   agent: AgentType;
   model?: string;
+  reasoningLevel?: string;
   prompt: PromptInput;
   completion: CompletionOptions;
   runtime: RuntimeOptions;
@@ -54,6 +55,7 @@ export interface LoopOptions {
   agent: {
     type: AgentType;
     model?: string;
+    reasoningLevel?: string;
     commandOverride?: string;
     allowAllPermissions?: boolean;
     extraFlags?: string[];

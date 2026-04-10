@@ -4,13 +4,14 @@ import { runOpenSpecWrapper } from "../openspec-wrapper";
 import type { AgentType } from "../src/agents/types";
 
 function usage(): void {
-  console.log(`Usage: ralph-run-openspec --change-id <CHANGE_ID> [--max-iterations <N>] [--model <MODEL>] [--agent <AGENT>] [-- <agent-extra-args...>]
+  console.log(`Usage: ralph-run-openspec --change-id <CHANGE_ID> [--max-iterations <N>] [--model <MODEL>] [--reasoning-level <LEVEL>] [--agent <AGENT>] [-- <agent-extra-args...>]
 
 Options:
   -h, --help                 Show this help message
   --change-id <CHANGE_ID>    OpenSpec change ID to run
   --max-iterations <N>       Maximum iteration count
   --model <MODEL>            Model passed to ralph-loop
+  --reasoning-level <LEVEL>  Reasoning level shown in output
   --agent <AGENT>            Agent passed to ralph-loop (default: opencode)
 `);
 }
@@ -23,6 +24,7 @@ const args = passthroughIndex >= 0 ? argv.slice(0, passthroughIndex) : argv;
 let changeId = "";
 let maxIterations: number | undefined;
 let model: string | undefined;
+let reasoningLevel: string | undefined;
 let agent: AgentType = "opencode";
 
 for (let i = 0; i < args.length; i += 1) {
@@ -41,6 +43,9 @@ for (let i = 0; i < args.length; i += 1) {
     case "--model":
       model = args[++i];
       break;
+    case "--reasoning-level":
+      reasoningLevel = args[++i];
+      break;
     case "--agent":
       agent = (args[++i] as AgentType | undefined) ?? "opencode";
       break;
@@ -51,6 +56,8 @@ for (let i = 0; i < args.length; i += 1) {
         maxIterations = Number(arg.slice("--max-iterations=".length));
       } else if (arg.startsWith("--model=")) {
         model = arg.slice("--model=".length);
+      } else if (arg.startsWith("--reasoning-level=")) {
+        reasoningLevel = arg.slice("--reasoning-level=".length);
       } else if (arg.startsWith("--agent=")) {
         agent = arg.slice("--agent=".length) as AgentType;
       } else {
@@ -77,6 +84,7 @@ await runOpenSpecWrapper({
   changeId,
   agent,
   model,
+  reasoningLevel,
   maxIterations,
   extraArgs: passthroughArgs,
 });

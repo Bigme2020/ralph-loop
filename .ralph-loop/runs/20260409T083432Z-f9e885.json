@@ -1,0 +1,23 @@
+{
+  "runId": "20260409T083432Z-f9e885",
+  "startedAt": "2026-04-09T08:34:32.521Z",
+  "cwd": "/Users/shijunyu/work/code/ralph-loop-dev",
+  "agent": "opencode",
+  "model": "demo-model",
+  "promptSource": "/var/folders/_t/srxn0n3n4g16ygyvyqrjwsnm0000gn/T/ralph-loop-cli-1775723672503.md",
+  "promptLength": 6,
+  "status": "max-iterations",
+  "iterations": [
+    {
+      "iteration": 1,
+      "exitCode": 1,
+      "completed": false,
+      "tools": {},
+      "askedQuestion": false,
+      "answerProvided": false
+    }
+  ],
+  "endedAt": "2026-04-09T08:34:33.528Z",
+  "completedIterations": 1,
+  "summary": "stopped at max iterations 1"
+}
